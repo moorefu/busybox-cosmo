@@ -39,6 +39,7 @@ fi
 
 echo "=== 4. 测试/安装器/文档 ==="
 cp "$ROOT/tests/smoke.sh" "$ROOT/tests/deep-test.sh" "$ROOT/tests/smoke-test.bat" "$OUT/release/"
+cp "$ROOT/scripts/bb.sh" "$OUT/release/busybox" && chmod 755 "$OUT/release/busybox"
 cp "$ROOT/tests/smoke-full.sh" "$OUT/release/smoke-full.sh" 2>/dev/null || true
 cp "$ROOT/install.sh" "$OUT/release/install.sh" && chmod 755 "$OUT/release/install.sh"
 cp "$ROOT/docs/PROJECT-HISTORY.md" "$OUT/release/PROJECT-HISTORY.md" 2>/dev/null || true
@@ -61,6 +62,7 @@ busybox-$BB_VER cosmopolitan 发布包 ($BUILD_DATE, 本工程可复现构建)
   ape-loader-*               ape loader (64K 页/无 binfmt 部署, 见 install-linux.sh)
   assimilate                 原生转换工具(install.sh 用其生成全功能原生副本)
   install.sh                 统一跨平台安装器 (loader/binfmt/cache 策略)
+  busybox                    零安装 launcher (同目录直跑: 自动 cache+原生副本)
   smoke.sh/deep-test.sh      测试(各平台: busybox sh smoke.sh)
   smoke-test.bat             Windows 冒烟
   md5sums.txt                校验清单

@@ -52,6 +52,20 @@ cache 键 = 平台-架构-母本 cksum:母本升级后自动生成新副本;旧�
    安装器在 PAGESIZE=65536 时自动选择它。
 5. Windows: 文件名必须含 `busybox`(busybox.exe/com) 才启用子命令模式。
 
+## 三·五、"直接跑 busybox-fat.ape 就自动 cache" 能做到什么程度
+
+- `./busybox-fat.ape`(发行物, 内嵌 loader): 首次运行 cosmopolitan 会**自动把内嵌
+  loader 提取/缓存到 `~/.ape-1.10`(或 `$TMPDIR`)再执行**, 母本零写入、有缓存;
+  但缓存的是 loader 而非 busybox 原生副本, 故 ash 嵌套 exec 受限。
+- 若要"运行 cache 中的 busybox **原生副本**"(全功能 shell): APE 自身引导无法一步
+  生成原生文件(需要 assimilate/cc, 且 APE 首字节执行链不可自定义), 因此由
+  同目录的零安装 launcher 承担:
+  ```sh
+  ./busybox <args>     # 同目录直跑: 自动 cp 母本→cache→assimilate 成原生→exec
+  ```
+  cache 位于 `$BUSYBOX_COSMO_CACHE` → `$XDG_CACHE_HOME/busybox-cosmo` →
+  `~/.cache/busybox-cosmo`, 文件 `busybox-<os>-<arch>-<cksum>`; 母本从不改。
+
 ## 四、自校验
 
 ```sh
