@@ -37,10 +37,13 @@ if [ -d "$LOADERS" ]; then
   cp "$LOADERS/install-linux.sh" "$OUT/release/" 2>/dev/null || true
 fi
 
-echo "=== 4. 测试与文档 ==="
+echo "=== 4. 测试/安装器/文档 ==="
 cp "$ROOT/tests/smoke.sh" "$ROOT/tests/deep-test.sh" "$ROOT/tests/smoke-test.bat" "$OUT/release/"
+cp "$ROOT/tests/smoke-full.sh" "$OUT/release/smoke-full.sh" 2>/dev/null || true
+cp "$ROOT/install.sh" "$OUT/release/install.sh" && chmod 755 "$OUT/release/install.sh"
 cp "$ROOT/docs/PROJECT-HISTORY.md" "$OUT/release/PROJECT-HISTORY.md" 2>/dev/null || true
 cp "$ROOT/docs/VERIFICATION-MATRIX.md" "$OUT/release/VERIFICATION-MATRIX.md" 2>/dev/null || true
+cp "$ROOT/docs/RUN-NO-SELF-MODIFY.md" "$OUT/release/RUN-NO-SELF-MODIFY.md" 2>/dev/null || true
 
 echo "=== 5. 生成 README.txt ==="
 BUILD_DATE="$(date '+%Y-%m-%d')"

@@ -24,6 +24,13 @@ make package                              # → dist/busybox-cosmo-release.zip
 make smoke
 ```
 
+### 安装/部署 (母本不修改)
+
+```sh
+./install.sh --prefix ~/.local/share/busybox-cosmo   # 跨平台(win 用 --win-only)
+./install.sh --linux-binfmt                          # Linux 内核级直跑(需 root, 需开机重注册)
+# 默认: cache 同化副本, 母本 libexec/busybox 永远 pristine; 详见 docs/RUN-NO-SELF-MODIFY.md
+```
 ### 从官方源码构建定制工具链 (可复现)
 
 ```sh
