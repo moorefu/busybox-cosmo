@@ -47,6 +47,18 @@ else
   echo "[prepare] 补丁已应用, 跳过"
 fi
 
+# 3b. 增量补丁: 恢复部分被裁 applet (free/uptime/ar/uncompress/unlzop/lzopcat)
+#     (基于已打 full patch 的树; 幂等以 .bb-restore-ok 标志为准)
+if [ -f "$BB_RESTORE_PATCH" ] && [ ! -f "$TREE/.bb-restore-ok" ]; then
+  if ( cd "$TREE" && patch -p1 --dry-run -s < "$BB_RESTORE_PATCH" >/dev/null 2>&1 ); then
+    echo "[prepare] 打增量补丁 $(basename "$BB_RESTORE_PATCH") ..."
+    ( cd "$TREE" && patch -p1 -s < "$BB_RESTORE_PATCH" )
+    touch "$TREE/.bb-restore-ok"
+  else
+    echo "[prepare] 增量补丁不可用(可能已含或版本不符), 跳过: $BB_RESTORE_PATCH"
+  fi
+fi
+
 # 4. 放配置
 cp "$CONFIG_DIR/busybox-$BB_VER.config" "$TREE/.config"
 echo "[prepare] $ARCH 构建树就绪: $TREE"

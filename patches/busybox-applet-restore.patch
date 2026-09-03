@@ -1,0 +1,61 @@
+# busybox 恢复 applet 增量补丁 (2026-09-03 二期)
+# 应用前提: 先打 busybox-cosmo-full.patch
+# 内容: 恢复 free/uptime/ar/uncompress/unlzop/lzopcat 为真实实现并适配 cosmo
+#   free:   sysinfo include 守卫加 __COSMOPOLITAN__; /proc/meminfo 缺失时回落 sysinfo
+#   uptime: 恢复 kbuild(去 xx 注释) + sysinfo 守卫; 移除 cosmo_stubs 桩
+--- a/procps/free.c
++++ b/procps/free.c
+@@ -52,7 +52,7 @@
+ //NB: if we implement -s or -c, need to stop being NOFORK!
+ 
+ #include "libbb.h"
+-#ifdef __linux__
++#if defined(__linux__) || defined(__COSMOPOLITAN__)
+ # include <sys/sysinfo.h>
+ #endif
+ 
+@@ -84,6 +84,8 @@
+ 	FILE *fp;
+ 	int seen_cached_and_available_and_reclaimable;
+ 
++	if (access("/proc/meminfo", R_OK) != 0)
++		return 0; /* no /proc (cosmo on win/mac): rely on sysinfo() only */
+ 	fp = xfopen_for_read("/proc/meminfo");
+ 	g->cached_kb = g->available_kb = g->reclaimable_kb = 0;
+ 	seen_cached_and_available_and_reclaimable = 3;
+--- a/procps/uptime.c
++++ b/procps/uptime.c
+@@ -28,7 +28,7 @@
+ 
+ //applet:IF_UPTIME(APPLET_NOEXEC(uptime, uptime, BB_DIR_USR_BIN, BB_SUID_DROP, uptime))
+ 
+-//xxkbuild:lib-$(CONFIG_UPTIME) += uptime.o
++//kbuild:lib-$(CONFIG_UPTIME) += uptime.o
+ 
+ //usage:#define uptime_trivial_usage
+ //usage:       ""
+@@ -40,7 +40,7 @@
+ //usage:       "  1:55pm  up  2:30, load average: 0.09, 0.04, 0.00\n"
+ 
+ #include "libbb.h"
+-#ifdef __linux__
++#if defined(__linux__) || defined(__COSMOPOLITAN__)
+ # include <sys/sysinfo.h>
+ #endif
+ 
+--- a/libbb/cosmo_stubs.c
++++ b/libbb/cosmo_stubs.c
+@@ -245,13 +245,6 @@
+ 	fputs("zcip: not supported in this build\n", stderr);
+ 	return 1;
+ }
+-int uptime_main(int argc, char **argv);
+-int uptime_main(int argc, char **argv)
+-{
+-	(void)argc; (void)argv;
+-	fputs("uptime: not supported in this build\n", stderr);
+-	return 1;
+-}
+ int klogd_main(int argc, char **argv);
+ int klogd_main(int argc, char **argv)
+ {
