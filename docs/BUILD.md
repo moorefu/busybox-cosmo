@@ -13,7 +13,7 @@ busybox-1.38.0 官方源码 (src/, 脚本取源, sha256 锁定)
 
 ## 二、工具链 (toolchain/cosmo)
 
-本工程依赖"定制工具链": **cosmocc 3.9.2 编译驱动 + cosmo master 头文件/库 + 5 个 libc 定制补丁**。
+本工程依赖"定制工具链": **cosmocc 编译驱动(默认 v4.0.2) + cosmo master 头文件/库 + 定制补丁**。
 工具链层补丁清单见 `patches/cosmo/README.md`；历史教训：头+库+链接件必须全套一致。
 
 三种就绪方式 (`toolchain/provision.sh`)：
@@ -21,7 +21,7 @@ busybox-1.38.0 官方源码 (src/, 脚本取源, sha256 锁定)
 | 模式 | 速度 | 说明 |
 |---|---|---|
 | `copy [src]` | 秒级 | 从既有已验工具链目录 APFS-clonefile 拷入 (默认 `/tmp/cosmopolitan-master/.cosmocc/3.9.2`) |
-| `download` | 分钟级 | 官方 cosmocc (cosmo.zip) — **无 5 定制补丁**, 仅作链路自测 |
+| `download` | 分钟级 | 官方 cosmocc (cosmo.zip) — **无定制补丁**, 仅作链路自测 |
 | `build` | 小时级 | `build-custom.sh`: master 源码 + `patches/cosmo/master-snapshot` 覆盖 → make → 组装 |
 
 ## 三、关键配置 (config/busybox-1.38.0.config)

@@ -63,3 +63,11 @@
   组装(基座+master 产物/头+64K 包装脚本) → 与已验参考代码级 verify。
 - 实测: 双架构从零构建成功; libcosmo.a 5250/5252 成员与参考 strip-debug 后代码全一致;
   用新工具链重建 busybox x86_64+aarch64+fat 0 错误, 冒烟 44/46 与基线一致。
+
+
+## 七、驱动基座升级 cosmocc 3.9.2 → 4.0.2 (2026-09-03)
+
+工具链的**编译驱动层**换用官方 cosmocc v4.0.2(sha `85b8c37a…`, COSMOCC_VER 参数化)。
+master libc 仍从官方源码构建(不受驱动影响——实测双架构 libcosmo.a 与 3.9.2 驱动构建
+strip-debug 代码逐成员一致); 驱动脚本/GCC/binutils/apelink 为 4.0.2。
+验证: 组装后 cosmocross = 4.0.2 基座 + 64K 变换逐字节一致; busybox 重建 + 双冒烟无回归。

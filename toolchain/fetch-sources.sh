@@ -5,13 +5,13 @@
 # 需要两份官方材料 (锁定版本, sha256 校验):
 #   1. cosmopolitan master 源码   jart/cosmopolitan @ 3293fad0a9eac7865c019be98fb993eeb933405e
 #      本工程 cosmo 定制补丁(patches/cosmo/*)就是相对该 commit 制作的
-#   2. 官方 cosmocc 3.9.2 工具链   (cosmocc-3.9.2.zip)
+#   2. 官方 cosmocc v4.0.2 工具链  (cosmocc-4.0.2.zip)
 #      a) 作为编译驱动基座(驱动不需要从源码构建——它本身是 GCC14/LLVM 发行)
 #      b) master libc 自举构建时用它的 bin/make + bin/*-cosmo-cc
 #   3. (可选) superconfigure GCC 下载脚本 (package.sh 完整打包时才需要)
 #
 # 产物 (toolchain/download/):
-#   cosmopolitan-3293fad.tar.gz / cosmocc-3.9.2.zip / 各自 .sha256
+#   cosmopolitan-3293fad.tar.gz / cosmocc-4.0.2.zip / 各自 .sha256
 #
 # 用法: toolchain/fetch-sources.sh [--force]
 # ============================================================
@@ -26,9 +26,9 @@ COSMO_TARBALL="cosmopolitan-$COSMO_COMMIT.tar.gz"
 COSMO_SHA256="cde290834d592c6abb29efda2b55c86a6ae816cbd8b40e59503925767967305c"
 COSMO_URL="https://github.com/jart/cosmopolitan/archive/$COSMO_COMMIT.tar.gz"
 
-COSMOCC_VER="3.9.2"
+COSMOCC_VER="4.0.2"
 COSMOCC_ZIP="cosmocc-$COSMOCC_VER.zip"
-COSMOCC_SHA256="f4ff13af65fcd309f3f1cfd04275996fb7f72a4897726628a8c9cf732e850193"
+COSMOCC_SHA256="85b8c37a406d862e656ad4ec14be9f6ce474c1b436b9615e91a55208aced3f44"
 COSMOCC_URL="https://cosmo.zip/pub/cosmocc/$COSMOCC_ZIP"
 
 sha_check() { # $1=file $2=sha256

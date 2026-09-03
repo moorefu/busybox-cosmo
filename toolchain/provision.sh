@@ -6,7 +6,7 @@
 #   copy    从已有预编译定制工具链目录拷贝 (最快, 本工程开发默认)
 #           provision.sh copy [/path/to/toolchain]
 #   build   从"官方源码"完整构建定制工具链 (可复现, 数小时级)
-#           = fetch-sources.sh (官方 master@锁定commit + cosmocc-3.9.2, sha 校验)
+#           = fetch-sources.sh (官方 master@锁定commit + cosmocc-4.0.2, sha 校验)
 #             + build-custom.sh (打补丁→make→组装→verify)
 #           provision.sh build [x86_64|aarch64|all]
 #   download 下载官方 cosmocc 发行版解压到 toolchain/cosmo

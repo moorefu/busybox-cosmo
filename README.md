@@ -27,7 +27,7 @@ make smoke
 ### 从官方源码构建定制工具链 (可复现)
 
 ```sh
-make toolchain-fetch     # 下载官方上游: cosmopolitan@3293fad0 + cosmocc-3.9.2 (sha 锁定)
+make toolchain-fetch     # 下载官方上游: cosmopolitan@3293fad0 + cosmocc-4.0.2 驱动 (sha 锁定)
 make toolchain-build     # 打补丁→make 双架构→组装→verify → toolchain/cosmo
 make toolchain-verify    # 与已验参考 .cosmocc/3.9.2 代码级比对
 ```

@@ -3,7 +3,7 @@
 # build-custom.sh — 从官方 cosmopolitan 源码构建"定制工具链"
 #
 # 原则 (与 2026-09-03 已验证工具链逐字节一致):
-#   [基座] 官方 cosmocc-3.9.2.zip        (编译驱动/GCC14, 驱动不自行构建)
+#   [基座] 官方 cosmocc (默认 v4.0.2 zip; 编译驱动/GCC14, 驱动不自行构建)
 #   [源码] 官方 cosmopolitan @3293fad    (jart/cosmopolitan master)
 #   [补丁] patches/cosmo/cosmo-custom-full.patch (17 文件)
 #   [构建] master 树内 make → o/<arch>/cosmopolitan.a + crt/ape 部件
@@ -15,7 +15,7 @@
 #   toolchain/fetch-sources.sh             # 先下载官方材料 (已 sha 锁定)
 #   toolchain/build-custom.sh [arch]       # x86_64|aarch64|all(默认)
 #   toolchain/build-custom.sh assemble     # 只重组装 (源码已构建过)
-#   toolchain/build-custom.sh verify       # 组装结果 vs 参考 .cosmocc/3.9.2
+#   toolchain/build-custom.sh verify       # 库/头 vs 参考 .cosmocc/3.9.2; 包装脚本 vs 基座+64K 变换
 #
 # 环境:
 #   JOBS=N            并行度
@@ -31,13 +31,14 @@ mkdir -p "$LOG_DIR"
 
 COSMO_COMMIT="3293fad0a9eac7865c019be98fb993eeb933405e"
 COSMO_TARBALL="$DL/cosmopolitan-$COSMO_COMMIT.tar.gz"
-COSMOCC_ZIP="$DL/cosmocc-3.9.2.zip"
+COSMOCC_VER="${COSMOCC_VER:-4.0.2}"
+COSMOCC_ZIP="$DL/cosmocc-$COSMOCC_VER.zip"
 
 SRC_DIR="$ROOT/work/cosmopolitan-$COSMO_COMMIT"     # 解压+打补丁源码
 OUT_TC="$ROOT/toolchain/cosmo"                       # 最终工具链
 STAGE="$ROOT/work/cosmo-stage"                       # 组装暂存
 JOBS="${JOBS:-8}"
-TC_BASE="$ROOT/work/cosmocc-392-base"                # 官方基座解压处
+TC_BASE="$ROOT/work/cosmocc-base"                     # 官方驱动基座解压处 (内容=COSMOCC_VER)
 
 log() { echo "[build] $*"; }
 die() { echo "[build][错误] $*" >&2; exit 1; }
@@ -46,16 +47,16 @@ die() { echo "[build][错误] $*" >&2; exit 1; }
 [ -f "$COSMOCC_ZIP" ]   || die "缺官方 cosmocc zip, 先跑 toolchain/fetch-sources.sh"
 [ -f "$PATCH" ]         || die "缺定制补丁: $PATCH"
 
-# ---------- 0. 准备基座 (官方 cosmocc 3.9.2) ----------
+# ---------- 0. 准备基座 (官方 cosmocc $COSMOCC_VER) ----------
 prep_base() {
   if [ -x "$TC_BASE/bin/x86_64-unknown-cosmo-cc" ]; then
     log "复用官方基座 $TC_BASE"
     return
   fi
-  log "解压官方 cosmocc 3.9.2 基座 → $TC_BASE"
+  log "解压官方 cosmocc $COSMOCC_VER 基座 → $TC_BASE"
   rm -rf "$TC_BASE" "$TC_BASE.tmp"
   mkdir -p "$(dirname "$TC_BASE")"
-  ( cd "$(dirname "$TC_BASE")" && unzip -q "$COSMOCC_ZIP" -d cosmocc-392-base.tmp && mv cosmocc-392-base.tmp "$TC_BASE" )
+  ( cd "$(dirname "$TC_BASE")" && unzip -q "$COSMOCC_ZIP" -d cosmocc-base.tmp && mv cosmocc-base.tmp "$TC_BASE" )
   log "基座 OK: $(ls "$TC_BASE" | tr '\n' ' ')"
 }
 
@@ -84,9 +85,9 @@ prep_src() {
     ( cd "$SRC_DIR" && patch -p1 -s < "$extra" ) || die "附加补丁失败: $extra"
   done
 
-  log "预置 .cosmocc/3.9.2 (官方基座, make 自举用) ..."
+  log "预置 .cosmocc/3.9.2 ← 官方 cosmocc $COSMOCC_VER (目录名为上游 Makefile 固定路径, 内容为 $COSMOCC_VER; make 自举用) ..."
   mkdir -p "$SRC_DIR/.cosmocc"
-  ( cd "$SRC_DIR/.cosmocc" && unzip -q "$COSMOCC_ZIP" -d 3.9.2 && ln -sfn 3.9.2 current )
+  ( cd "$SRC_DIR/.cosmocc" && rm -rf 3.9.2 && unzip -q "$COSMOCC_ZIP" -d 3.9.2 && ln -sfn 3.9.2 current )
   touch "$MARK"
   log "源码树就绪: $SRC_DIR"
 }
@@ -136,7 +137,7 @@ build_one() { # $1=arch(x86_64|aarch64)
 assemble() {
   log "组装 toolchain/cosmo ← 官方基座 + master 产物 + master 头"
   rm -rf "$STAGE"
-  ( cd "$ROOT/work" && cp -c -R cosmocc-392-base "$STAGE" )   # clonefile 秒级
+  ( cd "$ROOT/work" && cp -c -R cosmocc-base "$STAGE" )   # clonefile 秒级
 
   # 3a. 替换 x86_64 部件
   local X="$STAGE/x86_64-linux-cosmo/lib"
@@ -200,7 +201,7 @@ PY
   log "工具链完成: $OUT_TC ($(du -sh "$OUT_TC" | cut -f1))"
 }
 
-# ---------- 4. 校验 vs 参考 .cosmocc/3.9.2 ----------
+# ---------- 4. 校验 (参考 .cosmocc/3.9.2 用于 master 库/头; 驱动件以基座+变换为准) ----------
 verify() {
   local REF="${COSMO_REF:-/tmp/cosmopolitan-master/.cosmocc/3.9.2}"
   log "校验 $OUT_TC vs 参考 $REF"
@@ -261,13 +262,25 @@ verify() {
     fi
   done
 
-  # 文本/脚本/头 — 逐字节
-  for f in \
-    include/stdio.h include/libc/intrin/fds.h \
-    bin/cosmocross bin/x86_64-unknown-cosmo-cc bin/aarch64-unknown-cosmo-cc; do
-    if cmp -s "$OUT_TC/$f" "$REF/$f" 2>/dev/null; then log "  ✓ $f (逐字节)"
+  # 头(与参考同源, 逐字节) 与 包装脚本(基座驱动 $COSMOCC_VER + 本工程 64K 变换)
+  for f in include/stdio.h include/libc/intrin/fds.h; do
+    if cmp -s "$OUT_TC/$f" "$REF/$f" 2>/dev/null; then log "  ✓ $f (逐字节 vs 参考)"
     else log "  ✗ 差异: $f"; ok=0; fi
   done
+  # 驱动包装脚本 cosmocross: 与"基座原版 + 64K PAGESZ 变换"比对
+  local wrap="$TC_BASE/bin/cosmocross" wtmp="$tmpdir/cosmocross.exp"
+  if [ -f "$wrap" ]; then
+    python3 - "$wrap" "$wtmp" <<'PY'
+import sys
+s=open(sys.argv[1]).read()
+s=s.replace("PAGESZ=16384","PAGESZ=65536")
+s=s.replace("-Wl,-z,common-page-size=$PAGESZ -Wl,-z,max-page-size=16384",
+            "-Wl,-z,common-page-size=$PAGESZ -Wl,-z,max-page-size=$PAGESZ")
+open(sys.argv[2],"w").write(s)
+PY
+    if cmp -s "$OUT_TC/bin/cosmocross" "$wtmp" 2>/dev/null; then log "  ✓ bin/cosmocross (驱动 $COSMOCC_VER + 64K 变换, 逐字节)"
+    else log "  ✗ bin/cosmocross 与基座变换不符"; ok=0; fi
+  fi
 
   rm -rf "$tmpdir"
   if [ $ok = 1 ]; then log "=== 校验通过: 与已验证 .cosmocc/3.9.2 代码/内容一致 ==="

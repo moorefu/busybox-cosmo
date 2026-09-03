@@ -5,7 +5,7 @@
 ```
 toolchain/
 ├── provision.sh        # 就绪入口: copy | build | download
-├── fetch-sources.sh    # 下载官方上游材料 (master@commit + cosmocc-3.9.2, sha 锁定)
+├── fetch-sources.sh    # 下载官方上游材料 (master@commit + cosmocc-4.0.2 驱动, sha 锁定)
 ├── build-custom.sh     # 从官方源码构建定制工具链 (x86_64/aarch64/all/assemble/verify)
 ├── cosmo/              # 就绪后的工具链 (gitignored, ~1.3G)
 └── download/           # 官方材料缓存 (gitignored)
@@ -18,7 +18,7 @@ toolchain/
 得到本工程依赖的工具链。定制内容见 `patches/cosmo/`(cosmo-custom-full.patch 17 文件 +
 master-snapshot 覆盖形态 + README)。
 
-工具链本质 = **cosmocc 3.9.2 编译驱动 + cosmo master 头文件/库 + 定制补丁**。
+工具链本质 = **cosmocc 编译驱动(默认 v4.0.2) + cosmo master 头文件/库 + 定制补丁**。
 替换铁律: 头+库+链接件(ape.lds/ape*.o/crt)必须全套一致。
 
 ## 两种就绪方式
@@ -32,19 +32,19 @@ master-snapshot 覆盖形态 + README)。
 ## 从官方源码构建 (fetch + build)
 
 构建对象 = **官方 cosmopolitan 源码** + 本工程定制补丁; 编译驱动/GCC14 取官方
-cosmocc-3.9.2 发行(驱动为 GCC/LLVM 发行物, 不与 libc 一起从源码自举; 与上游
+cosmocc v4.0.2 发行(驱动为 GCC/LLVM 发行物, 不与 libc 一起从源码自举; 与上游
 `tool/cosmocc/package.sh` 同思路)。锁定:
 
 | 材料 | 来源 | 校验 |
 |---|---|---|
 | cosmopolitan 源码 | github.com/jart/cosmopolitan @ `3293fad0` | sha256 `cde29083…` |
-| cosmocc 3.9.2 | cosmo.zip | sha256 `f4ff13af…` (与 master Makefile pin 一致) |
+| cosmocc 4.0.2 (编译驱动) | cosmo.zip | sha256 `85b8c37a…` (COSMOCC_VER 可换) |
 
 流水线 (`build-custom.sh all`):
 
 ```
-1. fetch-sources.sh        下载并 sha 校验两份官方材料
-2. 解压基座 cosmocc-3.9.2 → work/cosmocc-392-base     (驱动)
+1. fetch-sources.sh        下载并 sha 校验两份官方材料 (驱动=cosmocc 4.0.2)
+2. 解压基座 cosmocc → work/cosmocc-base                  (驱动=COSMOCC_VER)
 3. 解压 master 源码 → work/cosmopolitan-<commit>
 4. 打补丁 patches/cosmo/cosmo-custom-full.patch (17 文件) + 自动应用
    patches/cosmo/cosmo-*-extra.patch 附加定制(如 sethostname 三平台实现)
