@@ -50,3 +50,16 @@
 - 统一两架构为最终验证配置 (40959/WIDE); 修复 prepare 脚本的 patch 误判坑;
 - `SOURCE_DATE_EPOCH` 支持逐位可复现构建;
 - 重建产物与历史基线逐对象字节一致 (仅版本横幅时刻不同, 见 VERIFICATION-MATRIX)。
+
+## 六、第二期 (2026-09-03): 定制工具链"从官方源码构建"
+
+一期交付"拷入已验工具链"。二期补上**官方源码构建入口**, 使工具链本身可复现:
+
+- `toolchain/fetch-sources.sh` — 下载官方 cosmopolitan@`3293fad0` 源码与官方 cosmocc-3.9.2
+  (sha256 锁定; cosmocc sha 与上游 master Makefile 内 pin 一致)。
+- 逆向提取权威源码差异 → `patches/cosmo/cosmo-custom-full.patch` (17 文件, `patch -p1` 直接可用;
+  覆盖形态仍保留在 `master-snapshot/`)。
+- `toolchain/build-custom.sh` — 官方基座自举 make → 双架构 cosmopolitan.a + crt/ape →
+  组装(基座+master 产物/头+64K 包装脚本) → 与已验参考代码级 verify。
+- 实测: 双架构从零构建成功; libcosmo.a 5250/5252 成员与参考 strip-debug 后代码全一致;
+  用新工具链重建 busybox x86_64+aarch64+fat 0 错误, 冒烟 44/46 与基线一致。

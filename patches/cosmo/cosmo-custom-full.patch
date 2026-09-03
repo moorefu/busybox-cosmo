@@ -1,0 +1,219 @@
+# ============================================================
+# busybox-cosmo: cosmopolitan master 定制补丁 (权威版, 2026-09-03)
+#   基座: jart/cosmopolitan @ 3293fad0a9eac7865c019be98fb993eeb933405e
+#   应用: 在 cosmopolitan master 源码树根执行  patch -p1 < 本文件
+#   内容(17 文件):
+#     1. /dev/zero Windows 虚拟       libc/... (kFdDevZero=11, 13 文件)
+#     2. mac 自身路径根治             libc/calls/getprogramexecutablename.greg.c
+#     3. QuickEdit 鼠标保留           libc/calls/tcsetattr-nt.c
+#     4. 64K 页支持(链接/嵌入)        ape/BUILD.mk + tool/build/apelink.c
+#   与 patches/cosmo/master-snapshot/ 等价 (该目录为成品文件覆盖形态)
+# ============================================================
+--- a/ape/BUILD.mk
++++ b/ape/BUILD.mk
+@@ -60,7 +60,7 @@
+ 	--no-dynamic-linker			\
+ 	-z norelro				\
+ 	-z common-page-size=0x4000		\
+-	-z max-page-size=0x4000
++	-z max-page-size=0x10000	# 64K: aarch64 64K页内核兼容(2026-09定制)
+ 
+ APE_LOADER_FLAGS =				\
+ 	-DNDEBUG				\
+--- a/libc/calls/fstat-nt.c
++++ b/libc/calls/fstat-nt.c
+@@ -63,6 +63,7 @@
+     case kFdConsole:
+     case kFdDevNull:
+     case kFdDevRandom:
++    case kFdDevZero:
+       return sys_fstat_nt_char(__get_pib()->fds.p[fd].kind, st);
+     case kFdSocket:
+       bzero(st, sizeof(*st));
+--- a/libc/calls/fstatat-nt.c
++++ b/libc/calls/fstatat-nt.c
+@@ -62,6 +62,8 @@
+       return sys_fstat_nt_char(kFdDevNull, st);
+     } else if (!strcmp(path + 5, "random") || !strcmp(path + 5, "urandom")) {
+       return sys_fstat_nt_char(kFdDevRandom, st);
++    } else if (!strcmp(path + 5, "zero")) {
++      return sys_fstat_nt_char(kFdDevZero, st);
+     } else if (!strcmp(path + 5, "stdin")) {
+       return sys_fstat_nt(STDIN_FILENO, st);
+     } else if (!strcmp(path + 5, "stdout")) {
+--- a/libc/calls/getprogramexecutablename.greg.c
++++ b/libc/calls/getprogramexecutablename.greg.c
+@@ -147,6 +147,27 @@
+     return;
+   }
+ 
++  if (IsXnu()) {
++    /* mac: 无 GetModuleFileName//proc。KERN_PROCARGS2 sysctl 的 argv 区
++     * 首串为 exec 绝对路径(不依赖 argv[0]/$_ 推断)。
++     * mac 常量: CTL_KERN=1, KERN_PROCARGS2=49 (Apple 特有值)。 */
++    int mib[3] = {1, 49, getpid()};
++    size_t need = 0;
++    static char xnu_buf[1 << 18]; /* 启动早期无 malloc, 用静态缓冲 */
++    if (!sysctl(mib, 3, NULL, &need, NULL, 0) && need > sizeof(int) &&
++        need <= sizeof(xnu_buf)) {
++      char *pb = xnu_buf;
++      if (!sysctl(mib, 3, pb, &need, NULL, 0)) {
++        const char *exe = pb + sizeof(int);
++        size_t elen = strnlen(exe, need - sizeof(int));
++        if (elen > 0 && elen + 1 <= sizeof(g_prog.u.buf)) {
++          memcpy(g_prog.u.buf, exe, elen + 1);
++          goto UseBuf;
++        }
++      }
++    }
++  }
++
+   // see if the loader passed us a path.
+   if (__program_executable_name) {
+     if (issetugid()) {
+--- a/libc/calls/ioctl.c
++++ b/libc/calls/ioctl.c
+@@ -114,7 +114,7 @@
+       return 0;
+     } else if (__get_pib()->fds.p[fd].kind == kFdDevNull) {
+       return enotty();
+-    } else if (__get_pib()->fds.p[fd].kind == kFdDevRandom) {
++    } else if (__get_pib()->fds.p[fd].kind == kFdDevRandom || __get_pib()->fds.p[fd].kind == kFdDevZero) {
+       return einval();
+     } else if (GetFileType(handle) == kNtFileTypePipe) {
+       uint32_t avail;
+--- a/libc/calls/lseek-nt.c
++++ b/libc/calls/lseek-nt.c
+@@ -65,7 +65,7 @@
+ }
+ 
+ textwindows int64_t sys_lseek_nt(int fd, int64_t offset, int whence) {
+-  if (__isfdkind(fd, kFdDevNull) || __isfdkind(fd, kFdDevRandom)) {
++  if (__isfdkind(fd, kFdDevNull) || __isfdkind(fd, kFdDevRandom) || __isfdkind(fd, kFdDevZero)) {
+     return offset;
+   } else if (__isfdkind(fd, kFdFile)) {
+     struct Fd *f = __get_pib()->fds.p + fd;
+--- a/libc/calls/open-nt.c
++++ b/libc/calls/open-nt.c
+@@ -255,6 +255,8 @@
+       return sys_open_nt_special(fd, flags, mode, kFdDevNull, u"NUL");
+     if (!strcmp(file + 5, "urandom") || !strcmp(file + 5, "random"))
+       return sys_open_nt_no_handle(fd, flags, mode, kFdDevRandom);
++    if (!strcmp(file + 5, "zero"))
++      return sys_open_nt_no_handle(fd, flags, mode, kFdDevZero);
+     if (!strcmp(file + 5, "stdin"))
+       return sys_open_nt_dup(fd, flags, mode, STDIN_FILENO);
+     if (!strcmp(file + 5, "stdout"))
+--- a/libc/calls/pread.c
++++ b/libc/calls/pread.c
+@@ -76,7 +76,7 @@
+   } else if (__isfdkind(fd, kFdSocket)) {
+     rc = espipe();
+   } else if (__isfdkind(fd, kFdFile) || __isfdkind(fd, kFdDevNull) ||
+-             __isfdkind(fd, kFdDevRandom)) {
++             __isfdkind(fd, kFdDevRandom) || __isfdkind(fd, kFdDevZero)) {
+     rc = sys_read_nt(fd, (struct iovec[]){{buf, size}}, 1, offset);
+   } else {
+     rc = ebadf();
+--- a/libc/calls/printfds.c
++++ b/libc/calls/printfds.c
+@@ -41,6 +41,7 @@
+     case kFdEpoll:
+       return "kFdEpoll";
+     case kFdDevRandom:
++    case kFdDevZero:
+       return "kFdRandom";
+     default:
+       return "kFdWut";
+--- a/libc/calls/read-nt.c
++++ b/libc/calls/read-nt.c
+@@ -1014,6 +1014,11 @@
+     return size;
+   }
+ 
++  if (f->kind == kFdDevZero) {
++    memset(data, 0, size);
++    return size;
++  }
++
+   if (f->kind == kFdConsole)
+     return ReadFromConsole(f, data, size, waitmask);
+ 
+--- a/libc/calls/readv-nt.c
++++ b/libc/calls/readv-nt.c
+@@ -32,6 +32,7 @@
+     case kFdConsole:
+     case kFdDevNull:
+     case kFdDevRandom:
++    case kFdDevZero:
+       return sys_read_nt(fd, iov, iovlen, -1);
+     case kFdSocket:
+       return _weaken(sys_recv_nt)(fd, iov, iovlen, 0);
+--- a/libc/calls/readwrite-nt.c
++++ b/libc/calls/readwrite-nt.c
+@@ -81,7 +81,7 @@
+   bool appending = isdisk && ReadOrWriteFile == (void *)WriteFile &&
+                    (f->flags & O_APPEND) && f->cursor;
+   bool pwriting = offset != -1;
+-  bool seekable = isdisk || f->kind == kFdDevNull || f->kind == kFdDevRandom;
++  bool seekable = isdisk || f->kind == kFdDevNull || f->kind == kFdDevRandom || f->kind == kFdDevZero;
+   if (pwriting && !seekable)
+     return espipe();
+ 
+--- a/libc/calls/tcsetattr-nt.c
++++ b/libc/calls/tcsetattr-nt.c
+@@ -58,8 +58,10 @@
+   if (tio->c_lflag & ICANON) {
+     inmode |= kNtEnableLineInput | kNtEnableQuickEditMode;
+   } else {
+-    // protip: hold down shift and you can use the mouse normally
+-    inmode &= ~kNtEnableQuickEditMode;
++    /* 定制(2026-09): 不再无条件关 QuickEdit。
++     * 原行为使 raw 程序(busybox sh 等非鼠标应用)失去鼠标选择/右键粘贴;
++     * 真正需要鼠标的程序会发 XT 鼠标序列(\e[?1000h), 由
++     * InterceptTerminalCommands 负责关 QuickEdit 让出鼠标。 */
+     __ttyconf.magic |= kTtyUncanon;
+   }
+   if (!(tio->c_iflag & ICRNL))
+--- a/libc/calls/write-nt.c
++++ b/libc/calls/write-nt.c
+@@ -64,6 +64,7 @@
+       isconsole = true;
+       break;
+     case kFdDevRandom:
++    case kFdDevZero:
+       // not implemented, XNU returns eperm();
+       return eperm();
+     default:
+--- a/libc/calls/writev-nt.c
++++ b/libc/calls/writev-nt.c
+@@ -31,6 +31,7 @@
+     case kFdConsole:
+     case kFdDevNull:
+     case kFdDevRandom:
++    case kFdDevZero:
+       return sys_write_nt(fd, iov, iovlen, -1);
+     case kFdSocket:
+       return _weaken(sys_send_nt)(fd, iov, iovlen, 0);
+--- a/libc/intrin/fds.h
++++ b/libc/intrin/fds.h
+@@ -15,6 +15,7 @@
+ #define kFdReserved  8
+ #define kFdDevNull   9
+ #define kFdDevRandom 10
++#define kFdDevZero   11
+ 
+ struct CursorShared {
+   pthread_mutex_t lock;
+--- a/tool/build/apelink.c
++++ b/tool/build/apelink.c
+@@ -1526,7 +1526,8 @@
+   // determine microprocessor page size
+   unsigned long pagesz;
+   if (in->elf->e_machine == EM_AARCH64) {
+-    pagesz = 16384;  // apple m1 (xnu, linux)
++    pagesz = 65536;  // 64K: 兼容 4K/16K/64K 页内核(2026-09 定制, 原 16384 使
++                     // 64K 页 Linux 的绝对化 phdr 不同余导致 ape loader 拒绝)
+   } else {           //
+     pagesz = 4096;   // x86-64, raspberry pi
+   }

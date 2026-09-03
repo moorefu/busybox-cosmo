@@ -25,6 +25,24 @@ SOURCE_DATE_EPOCH=1788431874 构建 repro1 / repro2 (独立树, 同源同补丁�
 busybox_unstripped md5: repro1 == repro2 == c6a1cd9dbc56db3b99fb41f72f8c2a98  ✅ 逐位可复现
 ```
 
+## 二·五、定制工具链"从官方源码构建"实测 (2026-09-03 第二期)
+
+在工程内以官方材料 + 本工程补丁完整重建定制工具链 (`toolchain/build-custom.sh all`):
+
+| 阶段 | 结果 |
+|---|---|
+| fetch: cosmopolitan@3293fad + cosmocc-3.9.2 | sha256 双校验通过 (`cde29083…` / `f4ff13af…`) |
+| 补丁: cosmo-custom-full.patch (17 文件) | 官方树 dry-run + 实打 0 FAILED; 结果树与原定制树逐字节一致 |
+| make MODE=x86_64 (基座 make 4.4.1 自举) | ✅ cosmopolitan.a 59M + crt/ape 全套 |
+| make MODE=aarch64 | ✅ cosmopolitan.a 57M + crt.o |
+| assemble: 官方基座 + master 产物/头 + 64K 包装脚本 | ✅ 结构与已验证 .cosmocc/3.9.2 一致 |
+| verify vs 参考 .cosmocc/3.9.2 | x86_64 libcosmo.a **5250/5250 成员**、aarch64 **5252/5252 成员** strip-debug 后代码一致; crt/ape/头/包装脚本一致 |
+| 用新工具链重建 busybox all | ✅ make 0 错误 (x86_64+aarch64+fat) |
+| 本地冒烟 | 44/46, 与基线同机行为一致 (`ps` 沙箱项 + `[win]` 平台项) |
+
+说明: 对象 strip-debug 前逐字节不同, 源于 DWARF 内嵌**构建路径**不同(参考树在 /tmp, 新树在工程内)——
+代码节与成员集合完全一致, 功能等价。
+
 ## 三、历史验证基线 (2026-09-03, 实机, 记录于 baseline/)
 
 | 平台 | 用法 | smoke | deep | 备注 |

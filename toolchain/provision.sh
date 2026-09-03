@@ -3,13 +3,15 @@
 # provision.sh — 就绪 cosmopolitan 定制工具链 (toolchain/cosmo)
 #
 # 三种模式:
-#   copy    从已有预编译工具链目录拷贝 (最快, 本工程开发默认)
+#   copy    从已有预编译定制工具链目录拷贝 (最快, 本工程开发默认)
 #           provision.sh copy [/path/to/toolchain]
-#   download 下载官方 cosmocc 发行版解压 (无定制 libc 补丁, 仅基础可用)
+#   build   从"官方源码"完整构建定制工具链 (可复现, 数小时级)
+#           = fetch-sources.sh (官方 master@锁定commit + cosmocc-3.9.2, sha 校验)
+#             + build-custom.sh (打补丁→make→组装→verify)
+#           provision.sh build [x86_64|aarch64|all]
+#   download 下载官方 cosmocc 发行版解压到 toolchain/cosmo
+#           (⚠️ 无本工程定制 libc 补丁; 仅作快速可用基座/诊断)
 #           provision.sh download
-#   build   从 cosmopolitan master 源码 + 本工程补丁完整构建定制工具链
-#           (最完整可复现, 但需数小时; 见 build-custom.sh)
-#           provision.sh build
 #
 # 环境变量:
 #   COSMO_SRC    copy 模式的源目录 (默认 /tmp/cosmopolitan-master/.cosmocc/3.9.2)
@@ -19,6 +21,7 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")/.." && pwd)/scripts/env.sh"
 
 MODE="${1:-}"
+ARCH="${2:-all}"
 DEST="$TOOLCHAIN_DIR/cosmo"
 COSMO_URL="${COSMO_URL:-https://cosmo.zip/pub/cosmocc/cosmocc.zip}"
 mkdir -p "$TOOLCHAIN_DIR"
@@ -36,6 +39,11 @@ case "$MODE" in
     cp -c -R "$SRC/." "$DEST/"
     echo "[provision] 完成 ($(du -sh "$DEST" | cut -f1))"
     ;;
+  build)
+    echo "[provision] 从官方源码构建定制工具链 (arch=$ARCH)"
+    "$TOOLCHAIN_DIR/fetch-sources.sh"
+    exec "$TOOLCHAIN_DIR/build-custom.sh" "$ARCH"
+    ;;
   download)
     TMP="$TOOLCHAIN_DIR/download/cosmocc.zip"
     mkdir -p "$TOOLCHAIN_DIR/download"
@@ -45,11 +53,8 @@ case "$MODE" in
     ( cd "$DEST" && unzip -q "$TMP" )
     echo "[provision] 完成 (官方发行版, 无本工程定制 libc 补丁)"
     ;;
-  build)
-    exec "$TOOLCHAIN_DIR/build-custom.sh"
-    ;;
   *)
-    echo "用法: $0 {copy [src]|download|build}" >&2
+    echo "用法: $0 {copy [src] | build [x86_64|aarch64|all] | download}" >&2
     exit 1
     ;;
 esac
