@@ -43,7 +43,7 @@ build_one() { # $1=arch
   ( cd "$tree" && make -j"$JOBS" CC="$cc" LD="$ld" AR="$ar" STRIP="$st" )
 
   echo "--- [$arch] apelink → dist/busybox-$arch.ape ---"
-  "$TC_APELINK" -o "$DIST_DIR/busybox-$arch.ape" "$tree/busybox_unstripped"
+  "$TC_APELINK" $(apelink_embed_args "$arch") -o "$DIST_DIR/busybox-$arch.ape" "$tree/busybox_unstripped"
   echo "  -> $DIST_DIR/busybox-$arch.ape"
 }
 
@@ -53,14 +53,14 @@ case "$TARGET" in
   fat)
     [ -f "$TREE_X86/busybox_unstripped" ] && [ -f "$TREE_A64/busybox_unstripped" ] || die "缺单架构 unstripped ELF"
     echo "--- [fat] 合成双架构 (基于两架构 unstripped ELF) ---"
-    "$TC_APELINK" -o "$DIST_DIR/busybox-fat.ape" "$TREE_X86/busybox_unstripped" "$TREE_A64/busybox_unstripped"
+    "$TC_APELINK" -l "$APE_LDR_X86" -l "$APE_LDR_A64" -M "$APE_M1_SRC" -o "$DIST_DIR/busybox-fat.ape" "$TREE_X86/busybox_unstripped" "$TREE_A64/busybox_unstripped"
     echo "  -> $DIST_DIR/busybox-fat.ape"
     ;;
   all)
     build_one x86_64
     build_one aarch64
     echo "--- [fat] 合成双架构 ---"
-    "$TC_APELINK" -o "$DIST_DIR/busybox-fat.ape" "$TREE_X86/busybox_unstripped" "$TREE_A64/busybox_unstripped"
+    "$TC_APELINK" -l "$APE_LDR_X86" -l "$APE_LDR_A64" -M "$APE_M1_SRC" -o "$DIST_DIR/busybox-fat.ape" "$TREE_X86/busybox_unstripped" "$TREE_A64/busybox_unstripped"
     echo "  -> $DIST_DIR/busybox-fat.ape"
     ;;
   *) die "未知目标: $TARGET (x86_64|aarch64|fat|all)" ;;

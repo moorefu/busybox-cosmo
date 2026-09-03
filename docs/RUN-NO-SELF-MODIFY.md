@@ -4,16 +4,16 @@
 
 | 运行方式 | 母本是否被改 | 功能 |
 |---|---|---|
-| 直接 exec APE (mac/Linux 首跑) | ✅ **会被改**(平台"同化": 原地重写为纯本机格式) | 首次后为原生格式, 全功能 |
-| 经 ape loader 显式运行 (`ape-loader-x86_64 ./busybox.com ...`) | ❌ 不改(md5/cksum 不变) | 顶层命令全功能; **ash 内 STANDALONE 嵌套 exec 受限**(取到 loader 自身路径) |
+| **本发行物直接 exec**(内嵌 ape loader: `apelink -l x86.elf -l arm64.elf -M m1.c`) | ❌ **不改**(loader 进程读母本) | 顶层命令全功能; **ash 内 STANDALONE 嵌套 exec 受限**(见局限 2) |
+| 旧式 APE(未内嵌 loader)直接 exec 首跑 | ✅ 会被改(平台"同化"原地重写) | 首次后原生格式 |
 | Linux + binfmt_misc (`/usr/bin/ape` + `FP`) | ❌ 不改(内核把文件交 loader, 保留真实 argv0) | **嵌套 exec 全功能**(实测矩阵 45/46+31/31) |
-| Windows (`.com`/`.exe`) | ❌ 不改(PE 原生加载, 无同化概念) | 全功能 |
-| **cache 同化副本**(安装器默认) | ❌ 不改(改的是副本) | **全功能**(含 ash 嵌套 exec) |
+| Windows (`.com`/`.exe`) | ❌ 不改(PE 原生加载) | 全功能 |
+| **install.sh cache 副本**(默认) | ❌ 不改(改的是副本) | **全功能**(assimilate 生成原生副本) |
 
-为什么直接 exec 会改自身:APE 是"一个文件多种格式"。在 Linux/mac 上内核按其中一种格式
-(ELF/Mach-O)加载;cosmopolitan 运行时检测到"直接从盘执行"时,会把文件**原地重写成只含
-当前平台格式的纯本机文件**(assimilate),之后每次启动都走内核原生加载,省去再次解析。
-这保证"拿到 zip 就能跑",代价是首个执行者会改写文件 —— 所以**发布/安装的母本绝不能直接跑**。
+> 2026-09-03 发行物已改为**内嵌 loader 的官方形态**(package.sh 同款
+> `apelink -l … -M …`),因此 release 里的 `busybox-x86_64.ape` / `busybox-fat.ape`
+> **直接运行也不会再改写自身**(实测 md5/cksum 恒定)。旧文"发布件绝不能直接跑"
+> 仅适用于未内嵌 loader 的旧产物;新发行物母本安全, 但完整 shell 请走 cache/install。
 
 ## 二、安装器策略 (`install.sh` + launcher)
 
@@ -32,9 +32,11 @@ Windows             → busybox.exe (PE 原生, 无同化)
 
 cache 键 = 平台-架构-母本 cksum:母本升级后自动生成新副本;旧副本可手动清
 (`rm -rf ~/.cache/busybox-cosmo`)。可用 `BUSYBOX_COSMO_CACHE`/`XDG_CACHE_HOME` 改位置。
+副本用随 release 分发的 `assimilate` 就地转成**当前平台原生格式**(Linux ELF / mac Mach-O),
+得到全功能且不再自改的原生二进制。
 
-**首跑成本**:一次 `cp`(≈1.9MB)+ 一次同化运行(数十~百 ms);此后直接跑原生副本,与
-系统命令同速。Linux+binfmt 则零拷贝零首跑(最快)。
+**首跑成本**:一次 `cp`(≈1.9MB)+ 一次 assimilate 转换(几十 ms);此后直接跑原生副本,
+与系统命令同速。Linux+binfmt 则零拷贝零首跑(最快)。
 
 ## 三、局限性(如实)
 

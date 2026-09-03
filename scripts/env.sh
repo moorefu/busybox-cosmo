@@ -49,6 +49,19 @@ TC_A64_AR="$TC/bin/aarch64-linux-cosmo-ar"
 TC_A64_ST="$TC/bin/aarch64-linux-cosmo-strip"
 TC_APELINK="$TC/bin/apelink"
 
+# APE 内嵌 loader (官方发行形态: apelink -l 打入, 直跑不改母本)
+APE_LDR_X86="$TC/bin/ape-x86_64.elf"
+APE_LDR_A64="$TC/bin/ape-aarch64.elf"
+APE_M1_SRC="$TC/bin/ape-m1.c"
+# 组装 apelink 参数: $1=arch(x86_64|aarch64) → 输出该架构内嵌参数
+apelink_embed_args() {
+  case "$1" in
+    x86_64) echo "-l $APE_LDR_X86" ;;
+    aarch64) echo "-l $APE_LDR_A64 -M $APE_M1_SRC" ;;
+    *) echo "" ;;
+  esac
+}
+
 # 构建树命名
 TREE_X86="$WORK_DIR/busybox-${BB_VER}-x86_64"
 TREE_A64="$WORK_DIR/busybox-${BB_VER}-aarch64"

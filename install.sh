@@ -109,7 +109,9 @@ MASTER="$(find_asset "$MASTER_SRC")" || { echo "缺 $MASTER_SRC (请在 release 
 # ---------- 安装 ----------
 LIBEXEC="$PREFIX/libexec"
 BIN="$PREFIX/bin"
-mkdir -p "$LIBEXEC" "$BIN" "$PREFIX/loaders"
+mkdir -p "$LIBEXEC" "$BIN" "$PREFIX/loaders" "$PREFIX/tools"
+# 原生转换工具(把副本就地转成当前平台 ELF/Mach-O, 得到全功能原生二进制)
+if AS="$(find_asset assimilate)"; then cp -f "$AS" "$PREFIX/tools/assimilate"; chmod 755 "$PREFIX/tools/assimilate"; fi
 cp -f "$MASTER" "$LIBEXEC/busybox"          # 母本: 只读运行/拷贝源, 从不直接改写
 chmod 755 "$LIBEXEC/busybox"
 for l in ape-loader-x86_64 ape-loader-aarch64 ape-loader-macos-x86_64 ape-loader-macos-arm64 ape-m1-loader-src.c; do
@@ -164,8 +166,13 @@ KEY="\$PLAT-\$ARCH-\$( (cksum < "\$MASTER") 2>/dev/null | cut -d' ' -f1 )"
 if [ ! -x "\$CACHE/busybox-\$KEY" ]; then
   cp -f "\$MASTER" "\$CACHE/busybox-\$KEY.tmp"
   chmod +x "\$CACHE/busybox-\$KEY.tmp"
-  # 首跑完成同化 (只发生在副本上)
-  "\$CACHE/busybox-\$KEY.tmp" true 2>/dev/null || true
+  # 首选: assimilate 把副本就地转成当前平台原生格式 (全功能且母本不改)
+  # 备选: 首跑一次让副本完成自同化 (仅自同化形态 APE)
+  if [ -x "$PREFIX/tools/assimilate" ]; then
+    "$PREFIX/tools/assimilate" -c "\$CACHE/busybox-\$KEY.tmp" 2>/dev/null || true
+  else
+    "\$CACHE/busybox-\$KEY.tmp" true 2>/dev/null || true
+  fi
   mv -f "\$CACHE/busybox-\$KEY.tmp" "\$CACHE/busybox-\$KEY"
 fi
 exec "\$CACHE/busybox-\$KEY" "\$@"
@@ -179,7 +186,7 @@ echo ""
 echo "=== 安装完成 ==="
 echo "  主程序(母本, 只读, 从不直接 exec): $LIBEXEC/busybox"
 echo "  launcher:           $BIN/busybox   (binfmt→cache 同化副本→[BB_USE_LOADER=1] loader; 母本不改)"
-echo "  loaders:            $PREFIX/loaders/"
+echo "  loaders:            $PREFIX/loaders/   (含 ape-loader-* / assimilate)"
 echo ""
 echo "试运行:"
 echo "  $BIN/busybox --help | head"
