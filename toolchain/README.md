@@ -46,7 +46,8 @@ cosmocc-3.9.2 发行(驱动为 GCC/LLVM 发行物, 不与 libc 一起从源码�
 1. fetch-sources.sh        下载并 sha 校验两份官方材料
 2. 解压基座 cosmocc-3.9.2 → work/cosmocc-392-base     (驱动)
 3. 解压 master 源码 → work/cosmopolitan-<commit>
-4. 打补丁 patches/cosmo/cosmo-custom-full.patch (17 文件)
+4. 打补丁 patches/cosmo/cosmo-custom-full.patch (17 文件) + 自动应用
+   patches/cosmo/cosmo-*-extra.patch 附加定制(如 sethostname 三平台实现)
 5. 源码树内自举: .cosmocc/3.9.2/bin/make MODE=x86_64|aarch64
    → o/<arch>/cosmopolitan.a + crt/ape 部件 + o/cosmocc.h.txt
    (系统 make 3.81 会被上游 Makefile 拒绝, 故用基座自带 make 4.4.1)

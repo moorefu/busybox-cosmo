@@ -8,6 +8,7 @@
 | `cosmo-custom-full.patch` | **权威 unified diff**（相对官方 commit `3293fad0`，`patch -p1` 可直接应用）— 工具链构建用它 |
 | `master-snapshot/` | 成品文件覆盖形态（文件内容 = 定制后状态；旧配方用 `cp -R master-snapshot/. <master树>/`） |
 | `cosmo-libc-custom.patch` | 早期文档式补丁（含注释，供阅读，不以 patch -p1 为保证） |
+| `cosmo-sethostname-extra.patch` | **附加定制**：libc/calls/sethostname.c（三平台等价物），build-custom 自动应用所有 `cosmo-*-extra.patch` |
 
 基座：**jart/cosmopolitan @ `3293fad0a9eac7865c019be98fb993eeb933405e`**
 （`toolchain/fetch-sources.sh` 按该 commit + sha256 `cde29083…` 取官方源码）。

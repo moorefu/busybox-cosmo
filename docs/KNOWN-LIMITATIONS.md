@@ -6,6 +6,7 @@
 |---|---|---|
 | `ps` 在 mac | 透传 `/bin/ps`; 沙箱禁止 exec 外部程序时报 Operation not permitted | 环境相关, 非缺陷 |
 | `mkfifo` / `mknod` | cosmo 未实现 mknodat wrapper (Linux/mac 均 ENOSYS) | cosmo 上游缺口 |
+| `sethostname`(hostname 写) | 已由工程补丁实现三平台等价物; mac/win 需 root/管理员 (非 root 得 EPERM, 读不受限) | cosmo-sethostname-extra.patch |
 | `nproc` | cosmo 未实现 sched_getaffinity | cosmo 上游缺口 |
 | 64KB 页 Linux aarch64 | 需用 `busybox-arm64-linux-elf` 或 64K loader + binfmt `FP`; 普通 APE 同化路径不可用 | 需 loader |
 | mac Apple Silicon 原生 arm64 | 顶层命令可用; ash 嵌套 exec 受限 (APE 前缀 argv 语义) | cosmo 上游级 |

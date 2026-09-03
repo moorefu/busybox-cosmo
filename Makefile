@@ -1,5 +1,5 @@
 # busybox-cosmo 工程便捷入口 (底层请直接调用 scripts/*.sh / toolchain/*.sh)
-.PHONY: help fetch build x86_64 aarch64 fat package smoke clean distclean \
+.PHONY: help fetch build x86_64 aarch64 fat package smoke smokefull clean distclean \
         toolchain-copy toolchain-fetch toolchain-build toolchain-verify
 
 help:
@@ -10,7 +10,8 @@ help:
 	@echo "make fat              — 合成双架构 fat (dist/busybox-fat.ape)"
 	@echo "make build            — x86_64 + aarch64 + fat 全量"
 	@echo "make package          — 生成发布包 (dist/busybox-cosmo-release.zip)"
-	@echo "make smoke            — 本地副本冒烟 (mac/linux, busybox.com sh smoke.sh)"
+	@echo "make smoke            — 本地副本冒烟(46 项: busybox.com sh smoke.sh)"
+	@echo "make smokefull        — 完整冒烟(10 组 ~180 项, 自适应 SKIP, 本地回环网络)"
 	@echo ""
 	@echo "=== 工具链 (toolchain/cosmo) ==="
 	@echo "make toolchain-copy   — 从既有已验工具链拷贝 (provision.sh copy, 秒级)"
@@ -44,6 +45,12 @@ smoke:
 	@cp dist/release/release/busybox.com .tmp/smoke/ 2>/dev/null || cp dist/busybox-x86_64.ape .tmp/smoke/busybox.com
 	@cp tests/smoke.sh .tmp/smoke/
 	@cd .tmp/smoke && ./busybox.com sh smoke.sh
+
+smokefull:
+	@rm -rf .tmp/smokef && mkdir -p .tmp/smokef
+	@cp dist/release/release/busybox.com .tmp/smokef/ 2>/dev/null || cp dist/busybox-x86_64.ape .tmp/smokef/busybox.com
+	@cp tests/smoke-full.sh .tmp/smokef/
+	@cd .tmp/smokef && ./busybox.com sh smoke-full.sh
 
 toolchain-copy:
 	toolchain/provision.sh copy

@@ -77,6 +77,13 @@ prep_src() {
   log "打定制补丁 (17 文件) ..."
   ( cd "$SRC_DIR" && patch -p1 -s < "$PATCH" ) || die "补丁应用失败"
 
+  # 追加定制(如 sethostname 跨平台实现): 按需逐个应用 patches/cosmo/cosmo-*-extra.patch
+  for extra in "$ROOT/patches/cosmo"/cosmo-*-extra.patch; do
+    [ -f "$extra" ] || continue
+    log "打附加定制补丁 $(basename "$extra") ..."
+    ( cd "$SRC_DIR" && patch -p1 -s < "$extra" ) || die "附加补丁失败: $extra"
+  done
+
   log "预置 .cosmocc/3.9.2 (官方基座, make 自举用) ..."
   mkdir -p "$SRC_DIR/.cosmocc"
   ( cd "$SRC_DIR/.cosmocc" && unzip -q "$COSMOCC_ZIP" -d 3.9.2 && ln -sfn 3.9.2 current )
@@ -219,22 +226,33 @@ verify() {
       mkdir -p "$tmpdir/${tag}_a" "$tmpdir/${tag}_b"
       ( cd "$tmpdir/${tag}_a" && cp "$OUT_TC/$f" x.a && "$arbin" x x.a ) || { log "  ✗ $f 解包失败"; ok=0; continue; }
       ( cd "$tmpdir/${tag}_b" && cp "$REF/$f" x.a && "$arbin" x x.a ) || { log "  ✗ $f 解包失败"; ok=0; continue; }
-      local na nb ndiff=0
+      local na nb ndiff=0 extra=0
       na=$(ls "$tmpdir/${tag}_a" | grep -c '\.o$' || true)
       nb=$(ls "$tmpdir/${tag}_b" | grep -c '\.o$' || true)
-      if [ "$na" != "$nb" ]; then
-        log "  ✗ $f: 成员数 $na vs $nb"; ok=0; continue
+      # 允许"我方 = 参考 + 本工程附加成员"(如 sethostname.o), 附加清单如下
+      local extra_ok=1
+      if [ "$na" -lt "$nb" ]; then
+        log "  ✗ $f: 我方成员数 $na < 参考 $nb"; ok=0; continue
       fi
       for o in "$tmpdir/${tag}_a"/*.o; do
         [ -e "$o" ] || continue
         local b=$(basename "$o")
-        [ -f "$tmpdir/${tag}_b/$b" ] || { ndiff=$((ndiff+1)); continue; }
+        if [ ! -f "$tmpdir/${tag}_b/$b" ]; then
+          case "$b" in
+            sethostname.o) extra=$((extra+1)) ;;   # 本工程 cosmo-sethostname-extra.patch 附加
+            *) extra_ok=0 ;;
+          esac
+          continue
+        fi
         "$stripbin" --strip-debug "$o" "$tmpdir/s1.o" 2>/dev/null || true
         "$stripbin" --strip-debug "$tmpdir/${tag}_b/$b" "$tmpdir/s2.o" 2>/dev/null || true
         cmp -s "$tmpdir/s1.o" "$tmpdir/s2.o" || ndiff=$((ndiff+1))
       done
-      if [ "$ndiff" = "0" ]; then log "  ✓ $f ($na 成员 strip-debug 代码一致)"
-      else log "  ✗ $f: $ndiff 个成员不一致"; ok=0; fi
+      if [ "$extra_ok" = "1" ] && [ "$ndiff" = "0" ]; then
+        log "  ✓ $f ($nb 参考成员代码一致 + 本工程附加 $extra 成员)"
+      else
+        log "  ✗ $f: $ndiff 个不一致 / 非法附加成员"; ok=0
+      fi
     else
       "$stripbin" --strip-debug "$OUT_TC/$f" "$tmpdir/v1.o" 2>/dev/null || true
       "$stripbin" --strip-debug "$REF/$f" "$tmpdir/v2.o" 2>/dev/null || true

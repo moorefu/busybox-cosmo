@@ -1,0 +1,77 @@
+--- a/libc/calls/sethostname.c
++++ b/libc/calls/sethostname.c
+@@ -0,0 +1,74 @@
++/*-*- mode:c;indent-tabs-mode:nil;c-basic-offset:2;tab-width:8;coding:utf-8 -*-│
++│ vi: set et ft=c ts=2 sts=2 sw=2 fenc=utf-8                               :vi │
++╞══════════════════════════════════════════════════════════════════════════════╡
++│ busybox-cosmo 定制: sethostname() 跨平台实现 (2026-09-03)                    │
++│   runtime.h 早已声明该符号, 上游只提供 Linux 原始 syscall, 无 C 实现 → 补全   │
++│   Linux  → sys_sethostname (原 syscall)                                    │
++│   Windows → 动态解析 kernel32!SetComputerNameExW (PhysicalDnsHostname)      │
++│   macOS  → sysctl kern.hostname ({CTL_KERN=1, KERN_HOSTNAME=10})            │
++╚════════════════════════════════════════════════════════════════════════════─╝*/
++#include "libc/calls/calls.h"
++#include <stdbool.h>
++#include "libc/calls/syscall_support-nt.internal.h"
++#include "libc/dce.h"
++#include "libc/macros.h"
++#include "libc/nt/dll.h"
++#include "libc/nt/enum/computernameformat.h"
++#include "libc/str/str.h"
++#include "libc/sysv/errfuns.h"
++
++#if defined(__x86_64__) || defined(__aarch64__)
++extern int sys_sethostname(const char *, size_t) asm("sys_sethostname");
++#endif
++
++typedef int (*SetComputerNameExW_fn)(int, const char16_t *);
++
++/**
++ * Sets system hostname.
++ *
++ * @return 0 on success, or -1 w/ errno
++ * @note cross-platform: Linux syscall, Windows SetComputerNameExW,
++ *       macOS/BSD sysctl kern.hostname.  Windows & macOS paths need
++ *       administrator/root privileges (permission denied otherwise).
++ */
++int sethostname(const char *name, size_t len) {
++  char tmp[256];
++  char16_t wname[256];
++  intptr_t hKernel32;
++  SetComputerNameExW_fn fn;
++
++  if (!name) {
++    return efault();
++  }
++  if (IsLinux()) {
++    return sys_sethostname(name, len);
++  }
++  if (IsWindows()) {
++    if (len >= ARRAYLEN(tmp)) {
++      return enametoolong();
++    }
++    memcpy(tmp, name, len);
++    tmp[len] = '\0';
++    tprecode8to16(wname, ARRAYLEN(wname), tmp);
++    hKernel32 = GetModuleHandleW(u"kernel32");
++    fn = (SetComputerNameExW_fn)GetProcAddress(hKernel32, "SetComputerNameExW");
++    if (!fn) {
++      return enosys();
++    }
++    if (fn(kNtComputerNamePhysicalDnsHostname, wname)) {
++      return 0;
++    }
++    return __winerr();
++  }
++  if (IsXnu()) {
++    /* CTL_KERN=1, KERN_HOSTNAME=10 (Darwin) */
++    int mib[2] = {1, 10};
++    if (len >= ARRAYLEN(tmp)) {
++      return enametoolong();
++    }
++    memcpy(tmp, name, len);
++    tmp[len] = '\0';
++    return sysctl(mib, 2, NULL, NULL, tmp, len + 1);
++  }
++  return enosys();
++}

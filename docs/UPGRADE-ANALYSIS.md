@@ -75,10 +75,22 @@ config 8 行 =y。恢复流程已固化进 `scripts/prepare-worktree.sh`(幂等)
 unlzop/lzopcat); config 对应 =y; `scripts/prepare-worktree.sh` 增量补丁 + 新符号锚定
 (CONFIG_MAKE/PDPMAKE 由 w32 源码引入, 需先 oldconfig 锚定再强制 =y)。
 
-### B2. 判定"平台受限/需 cosmo 上游" (未纳入, 有明确根因)
+### B2. HOSTNAME — 已用平台等价物解决 (cosmo libc 层补 sethostname)
 
-- `HOSTNAME`:busybox 链接需要 `sethostname()` — cosmo 只有 Linux 原始 syscall
-  (sys_sethostname.S), **无导出符号**; 且 DNSDOMAINNAME=y 亦走 hostname_main → 保留 stub。
+`patches/cosmo/cosmo-sethostname-extra.patch` 为 cosmo libc 补 `sethostname()`(runtime.h
+早已声明、上游无实现), 三平台等价物:
+
+| 平台 | 实现 | 权限 |
+|---|---|---|
+| Linux | `sys_sethostname` (cosmo 原 syscall) | root |
+| Windows | 动态解析 `kernel32!SetComputerNameExW`(PhysicalDnsHostname) | 管理员 |
+| macOS/BSD | `sysctl` `{CTL_KERN=1, KERN_HOSTNAME=10}` | root |
+
+busybox 侧恢复 hostname/dnsdomainname 真实实现(去 stub)。实测(mac 非 root): 读 OK
+(`AppledeMacBook-Pro.local`), 写走 sysctl 返回 EPERM —— 正确平台语义, 不再是 stub。
+
+### B2b. 仍判定"平台受限/需 cosmo 上游" (未纳入, 有明确根因)
+
 - `NTPD`:busybox ntpd 深度依赖 Linux 内核 PLL `adjtimex()`/`struct timex`/`STA_PLL` —
   cosmo 无 struct timex 与 adjtimex() API(mac/win 亦无内核 PLL)。非"纯用户态", 归平台受限。
   若日后 cosmo 上游补 `clock_adjtime`/`adjtimex` 公开 API 即可恢复(Linux-APE 上可用)。

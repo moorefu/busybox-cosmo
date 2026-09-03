@@ -1,9 +1,9 @@
-# busybox 恢复 applet 增量补丁 (2026-09-03 二期 v4)
+# busybox 恢复 applet 增量补丁 (2026-09-03 二期 v5)
 # 应用前提: 先打 busybox-cosmo-full.patch
-# 恢复真实实现: free uptime ar uncompress unlzop lzopcat telnet dnsdomainname
-# 新增(w32 移植): make/pdpmake (POSIX make, pdpmake 公有领域衍生)
+# 恢复真实实现: free uptime ar uncompress unlzop lzopcat telnet hostname dnsdomainname
+# 新增(w32 移植): make/pdpmake
 # cosmo 适配: sysinfo 守卫 / free 无 /proc 回落 / stub 移除
-# 注: hostname 保留 stub(cosmo 无 sethostname 导出); dnsdomainname 走 hostname_main 故也保留
+# hostname: cosmo libc 补 sethostname 跨平台实现后恢复(配 cosmo-sethostname-extra.patch)
 --- a/procps/free.c
 +++ b/procps/free.c
 @@ -52,7 +52,7 @@
@@ -55,22 +55,22 @@
  
  //usage:#define telnet_trivial_usage
  //usage:	IF_FEATURE_TELNET_AUTOLOGIN("[-a] [-l USER] ")"HOST [PORT]"
+--- a/networking/hostname.c
++++ b/networking/hostname.c
+@@ -25,8 +25,8 @@
+ //applet:IF_DNSDOMAINNAME(APPLET_NOEXEC(dnsdomainname, hostname, BB_DIR_BIN, BB_SUID_DROP, dnsdomainname))
+ //applet:IF_HOSTNAME(     APPLET_NOEXEC(hostname,      hostname, BB_DIR_BIN, BB_SUID_DROP, hostname     ))
+ 
+-//xxkbuild:lib-$(CONFIG_HOSTNAME) += hostname.o
+-//xxkbuild:lib-$(CONFIG_DNSDOMAINNAME) += hostname.o
++//kbuild:lib-$(CONFIG_HOSTNAME) += hostname.o
++//kbuild:lib-$(CONFIG_DNSDOMAINNAME) += hostname.o
+ 
+ //usage:#define hostname_trivial_usage
+ //usage:       "[-sidf] [HOSTNAME | -F FILE]"
 --- a/libbb/cosmo_stubs.c
 +++ b/libbb/cosmo_stubs.c
-@@ -1,5 +1,12 @@
- #include <stdio.h>
- 
-+int hostname_main(int argc, char **argv);
-+int hostname_main(int argc, char **argv)
-+{
-+	(void)argc; (void)argv;
-+	fputs("hostname: not supported in this build\n", stderr);
-+	return 1;
-+}
- int kbd_mode_main(int argc, char **argv);
- int kbd_mode_main(int argc, char **argv)
- {
-@@ -175,13 +182,6 @@
+@@ -175,13 +175,6 @@
  	fputs("brctl: not supported in this build\n", stderr);
  	return 1;
  }
@@ -84,21 +84,21 @@
  int ifupdown_main(int argc, char **argv);
  int ifupdown_main(int argc, char **argv)
  {
-@@ -196,13 +196,6 @@
+@@ -194,13 +187,6 @@
+ {
+ 	(void)argc; (void)argv;
  	fputs("nameif: not supported in this build\n", stderr);
- 	return 1;
- }
+-	return 1;
+-}
 -int ntpd_main(int argc, char **argv);
 -int ntpd_main(int argc, char **argv)
 -{
 -	(void)argc; (void)argv;
 -	fputs("ntpd: not supported in this build\n", stderr);
--	return 1;
--}
+ 	return 1;
+ }
  int tc_main(int argc, char **argv);
- int tc_main(int argc, char **argv)
- {
-@@ -210,13 +203,6 @@
+@@ -210,13 +196,6 @@
  	fputs("tc: not supported in this build\n", stderr);
  	return 1;
  }
@@ -112,7 +112,7 @@
  int telnetd_main(int argc, char **argv);
  int telnetd_main(int argc, char **argv)
  {
-@@ -245,13 +231,6 @@
+@@ -245,13 +224,6 @@
  	fputs("zcip: not supported in this build\n", stderr);
  	return 1;
  }
