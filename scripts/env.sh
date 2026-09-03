@@ -25,9 +25,11 @@ TOOLCHAIN_DIR="$ROOT/toolchain"
 
 # 完整 busybox 适配补丁 (含 82 文件)
 BB_FULL_PATCH="$PATCHES_DIR/busybox-cosmo-full.patch"
-# 增量补丁: 恢复部分被裁 applet 为真实实现 (free/uptime/ar/uncompress/unlzop/lzopcat)
-# 应用在 full patch 之后; 置空则跳过
+# 增量补丁: 恢复部分被裁 applet 为真实实现 (free/uptime/ar/uncompress/unlzop/lzopcat/
+# telnet/hostname) + w32 移植 make; 应用在 full patch 之后; 置空则跳过
 BB_RESTORE_PATCH="$PATCHES_DIR/busybox-applet-restore.patch"
+# 这些符号由增量补丁新增源码引入(kconfig 新符号), prepare 时锚定并强制 =y
+BB_FORCE_APP_LETS="CONFIG_MAKE CONFIG_PDPMAKE"
 
 # 工具链: 默认工程内拷入的定制工具链; 可用 COSMO 环境变量覆盖
 if [ -n "${COSMO:-}" ]; then

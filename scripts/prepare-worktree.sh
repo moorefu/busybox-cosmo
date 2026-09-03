@@ -59,6 +59,15 @@ if [ -f "$BB_RESTORE_PATCH" ] && [ ! -f "$TREE/.bb-restore-ok" ]; then
   fi
 fi
 
-# 4. 放配置
+# 4. 放配置; 新增源码带来的"新符号"(如 w32 移植 make → CONFIG_MAKE/PDPMAKE)
+#    需先 oldconfig 锚定(否则 silentoldconfig 交互提问中断), 再强制目标 =y
 cp "$CONFIG_DIR/busybox-$BB_VER.config" "$TREE/.config"
+if [ -n "${BB_FORCE_APP_LETS:-}" ]; then
+  ( cd "$TREE" && yes "" | make -s oldconfig >/dev/null 2>&1 ) || true
+  for c in $BB_FORCE_APP_LETS; do
+    sed -i.bak "s/^# $c is not set/$c=y/" "$TREE/.config" 2>/dev/null || true
+    rm -f "$TREE/.config.bak"
+  done
+  echo "[prepare] 锚定新符号并强制: $BB_FORCE_APP_LETS"
+fi
 echo "[prepare] $ARCH 构建树就绪: $TREE"

@@ -62,10 +62,27 @@ CDROP/PDROP/DROP/JN 等为 w32 作者附加功能)与 cosmo 的"单二进制三�
 落地: `patches/busybox-applet-restore.patch`(增量, 在 full patch 之后应用)+
 config 8 行 =y。恢复流程已固化进 `scripts/prepare-worktree.sh`(幂等)。
 
-### B. 判定为"可恢复但需另测/平台受限"(后续候选, 未纳配置)
+### B. 二期已纳入 (2026-09-03 三轮): 纯网络/用户态
 
-- 纯网络/用户态: `TELNET`(客户端, TCP), `HOSTNAME`, `LOGGER`(需 syslog 设施, cosmo 缺
-  /dev/log, 收益低), `NTPD`(需 adjtimex), `NETCAT`(已开 NC)
+| applet | 状态 | 实测 |
+|---|---|---|
+| `telnet` (客户端) | ✅ 恢复 | mac 对本地 echo 服务器真实 TCP 往返成功 |
+| `make` / `pdpmake` | ✅ **w32 移植**(busybox-w32 miscutils/make.c, pdpmake 公有领域衍生) | 解析并执行 Makefile 配方成功 |
+| `nc` (NETCAT) | ✅ 原已开 (NC/NC_SERVER/NC_EXTRA) | 连接正常 |
+| `dnsdomainname` | ✅ 随 hostname.c 恢复(gethostname) | 入列 |
+
+落地: `patches/busybox-applet-restore.patch`(v4: 上述 + 一期 free/uptime/ar/uncompress/
+unlzop/lzopcat); config 对应 =y; `scripts/prepare-worktree.sh` 增量补丁 + 新符号锚定
+(CONFIG_MAKE/PDPMAKE 由 w32 源码引入, 需先 oldconfig 锚定再强制 =y)。
+
+### B2. 判定"平台受限/需 cosmo 上游" (未纳入, 有明确根因)
+
+- `HOSTNAME`:busybox 链接需要 `sethostname()` — cosmo 只有 Linux 原始 syscall
+  (sys_sethostname.S), **无导出符号**; 且 DNSDOMAINNAME=y 亦走 hostname_main → 保留 stub。
+- `NTPD`:busybox ntpd 深度依赖 Linux 内核 PLL `adjtimex()`/`struct timex`/`STA_PLL` —
+  cosmo 无 struct timex 与 adjtimex() API(mac/win 亦无内核 PLL)。非"纯用户态", 归平台受限。
+  若日后 cosmo 上游补 `clock_adjtime`/`adjtimex` 公开 API 即可恢复(Linux-APE 上可用)。
+- `LOGGER`: 需 syslog 设施(/dev/log), cosmo 缺; 收益低。
 - Linux 专属/内核接口, 仅在 Linux-APE 有意义(Windows/mac 运行时无操作):
   `DMESG KLOGD SYSLOGD LOGREAD`(kmsg/syslog)、`IPCS/IPCRM`(SysV IPC)、
   `PING/TRACEROUTE`(raw socket)、`IFCONFIG/IP/ROUTE/ARP/BRCTL`(netlink/ioctl)、
