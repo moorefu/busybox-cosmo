@@ -31,13 +31,13 @@ pick_master() {
         [ -f "$HERE/$f" ] && { echo "$HERE/$f"; return 0; }
       done ;;
   esac
-  # 兜底任意 APE
-  for f in busybox-*.ape; do
-    [ -f "$HERE/$f" ] && { echo "$HERE/$f"; return 0; }
-  done
-  # 64K 页 Linux: ELF
+  # 64K 页 Linux: ELF 优先
   [ "$OS" = linux ] && [ "$(getconf PAGESIZE 2>/dev/null)" = 65536 ] && \
     [ -f "$HERE/busybox-arm64-linux-elf" ] && { echo "$HERE/busybox-arm64-linux-elf"; return 0; }
+  # 兜底: 同目录任一发行母本 (最小包常名为 busybox.com / busybox-fat.ape)
+  for f in busybox.com busybox.exe busybox-fat.ape busybox-*.ape; do
+    [ -f "$HERE/$f" ] && { echo "$HERE/$f"; return 0; }
+  done
   echo ""
 }
 
