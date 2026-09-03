@@ -1,0 +1,147 @@
+--- /Users/moore/Projects/busybox/busybox-1.38.0/libbb/messages.c	2023-01-05 23:29:10
++++ src/busybox-1.38.0-work/libbb/messages.c	2026-09-03 00:43:30
+@@ -27,7 +27,31 @@
+ 
+ const char bb_hexdigits_upcase[] ALIGN1 = "0123456789ABCDEF";
+ 
++#if !defined(__COSMOPOLITAN__)
+ const char bb_busybox_exec_path[] ALIGN1 = CONFIG_BUSYBOX_EXEC_PATH;
++#else
++/* cosmo 版: 自身路径运行时解析
++ * argv[0] 在多层 exec 后不可靠(exec 后 argv[0]=applet 名), 用 cosmo 运行时
++ * 在 APE 启动时填充的 __program_executable_name(绝对路径)。 */
++#include <limits.h>
++extern char *__program_executable_name;
++const char *get_busybox_exec_path(void)
++{
++	static char bb_busybox_exec_path_buf[PATH_MAX];
++
++	if (!bb_busybox_exec_path_buf[0]) {
++		const char *p = __program_executable_name;
++		if (!p || !p[0])
++			p = bb_argv0 ? bb_argv0 : CONFIG_BUSYBOX_EXEC_PATH;
++		if (!realpath(p, bb_busybox_exec_path_buf)) {
++			/* realpath 失败: 退化为原样路径 */
++			safe_strncpy(bb_busybox_exec_path_buf, p,
++				     sizeof(bb_busybox_exec_path_buf));
++		}
++	}
++	return bb_busybox_exec_path_buf;
++}
++#endif
+ const char bb_default_login_shell[] ALIGN1 = LIBBB_DEFAULT_LOGIN_SHELL;
+ /* util-linux manpage says /sbin:/bin:/usr/sbin:/usr/bin,
+  * but I want to save a few bytes here. Check libbb.h before changing! */
+--- /Users/moore/Projects/busybox/busybox-1.38.0/libbb/appletlib.c	2026-05-13 10:10:19
++++ src/busybox-1.38.0-work/libbb/appletlib.c	2026-09-03 00:36:10
+@@ -722,6 +722,9 @@
+ 	return -1;
+ }
+ 
++#if defined(__COSMOPOLITAN__)
++const char *bb_argv0;
++#endif
+ int scripted_main(int argc UNUSED_PARAM, char **argv) MAIN_EXTERNALLY_VISIBLE;
+ int scripted_main(int argc UNUSED_PARAM, char **argv)
+ {
+@@ -1011,6 +1014,9 @@
+ 
+ # if NUM_SCRIPTS > 0
+ /* if SINGLE_APPLET_MAIN, these two functions are simpler: */
++#if defined(__COSMOPOLITAN__)
++const char *bb_argv0;
++#endif
+ int scripted_main(int argc UNUSED_PARAM, char **argv) MAIN_EXTERNALLY_VISIBLE;
+ int scripted_main(int argc UNUSED_PARAM, char **argv)
+ {
+@@ -1042,6 +1048,10 @@
+ int main(int argc UNUSED_PARAM, char **argv)
+ #endif
+ {
++#if defined(__COSMOPOLITAN__)
++	/* cosmo: execvp(/proc/self/exe) 不可用, 记录 argv[0] 供 exec 自身用 */
++	bb_argv0 = argv[0];
++#endif
+ #if 0
+ 	/* TODO: find a use for a block of memory between end of .bss
+ 	 * and end of page. For example, I'm getting "_end:0x812e698 2408 bytes"
+--- /Users/moore/Projects/busybox/busybox-1.38.0/include/libbb.h	2026-05-13 10:10:19
++++ src/busybox-1.38.0-work/include/libbb.h	2026-09-03 00:33:01
+@@ -608,6 +608,14 @@
+ char *xmalloc_follow_symlinks(const char *path) FAST_FUNC RETURNS_MALLOC;
+ 
+ 
++	/* cosmopolitan (cosmocc<=4.0.2) declares SIGUSR1/2 as extern const;
++	 * not valid in constant expressions; pin to values */
++#if defined(__COSMOPOLITAN__)
++#undef SIGUSR1
++#undef SIGUSR2
++#define SIGUSR1 10
++#define SIGUSR2 12
++#endif
+ enum {
+ 	/* bb_signals(BB_FATAL_SIGS, handler) catches all signals which
+ 	 * otherwise would kill us, except for those resulting from bugs:
+@@ -776,6 +784,7 @@
+ /* Useful for having small structure members/global variables */
+ typedef int8_t socktype_t;
+ typedef int8_t family_t;
++#ifndef __COSMOPOLITAN__
+ struct BUG_too_small {
+ 	char BUG_socktype_t_too_small[(0
+ 			| SOCK_STREAM
+@@ -799,6 +808,9 @@
+ 			/* | AF_IPX */
+ 			) <= 127 ? 1 : -1];
+ };
++#else
++struct BUG_too_small { char _c; };
++#endif
+ 
+ 
+ int xsocket(int domain, int type, int protocol) FAST_FUNC;
+@@ -2471,7 +2483,14 @@
+ #define bb_path_motd_file "/etc/motd"
+ 
+ #define bb_dev_null "/dev/null"
++#if defined(__COSMOPOLITAN__)
++/* cosmo 无 /proc/self/exe 的 exec 支持: 宏替换为运行时解析(realpath(argv[0])) */
++# define bb_busybox_exec_path get_busybox_exec_path()
++extern const char *bb_argv0;
++extern const char *get_busybox_exec_path(void) FAST_FUNC;
++#else
+ extern const char bb_busybox_exec_path[] ALIGN1;
++#endif
+ /* allow default system PATH to be extended via CFLAGS */
+ #ifndef BB_ADDITIONAL_PATH
+ #define BB_ADDITIONAL_PATH ""
+--- /Users/moore/Projects/busybox/busybox-1.38.0/shell/ash.c	2026-04-17 23:44:06
++++ src/busybox-1.38.0-work/shell/ash.c	2026-09-03 00:48:53
+@@ -6273,9 +6273,16 @@
+ 	jp = makejob(1);
+ 
+ 	sigblockall(NULL);
++#if defined(__COSMOPOLITAN__)
++	/* cosmo: Windows vfork(共享内存语义) 与 ash 交互有缺陷(管道 exec 后
++	 * argv/数据错乱)。改用 fork: cosmo fork(fork-nt) 为完整内存复制,
++	 * 语义可靠(经 forkdiag 实机验证)。mac 上 vfork 本身被 cosmo 禁用。 */
++	pid = fork();
++#else
+ 	vforked = 1;
+ 
+ 	pid = vfork();
++#endif
+ 
+ 	if (!pid) {
+ 		forkchild(jp, n, FORK_FG);
+@@ -6283,8 +6290,9 @@
+ 		shellexec(argv[0], argv, path, idx);
+ 		/* NOTREACHED */
+ 	}
+-
++#if !defined(__COSMOPOLITAN__)
+ 	vforked = 0;
++#endif
+ 	sigclearmask();
+ 	forkparent(jp, n, FORK_FG, pid);
+ 

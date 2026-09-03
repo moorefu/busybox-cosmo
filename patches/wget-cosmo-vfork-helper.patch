@@ -1,0 +1,16 @@
+--- /Users/moore/Projects/busybox/busybox-1.38.0/networking/wget.c	2024-09-26 22:33:40
++++ /Users/moore/Projects/busybox/cosmo-dist/src/busybox-1.38.0-work/networking/wget.c	2026-09-03 00:15:21
+@@ -1188,8 +1188,11 @@
+ 		int status;
+ 
+ 		/* Open socket to http(s) server */
+-#if ENABLE_FEATURE_WGET_OPENSSL
+-		/* openssl (and maybe internal TLS) support is configured */
++#if ENABLE_FEATURE_WGET_OPENSSL && !defined(__COSMOPOLITAN__)
++		/* openssl (and maybe internal TLS) support is configured
++		 * NB: __COSMOPOLITAN__ (cosmopolitan/APE): openssl helper 的 child_failed
++		 * 依赖 vfork 共享内存语义,cosmo vfork 为内存复制,父进程看不到子进程
++		 * 的失败标记,会误把死 socketpair 当会话。直接走 internal TLS。 */
+ 		if (server.protocol == P_HTTPS) {
+ 			/* openssl-based helper
+ 			 * Inconvenient API since we can't give it an open fd

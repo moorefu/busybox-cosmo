@@ -1,0 +1,20 @@
+# cosmo master libc 定制补丁 (2026-09-03, 工具链工程)
+# 应用对象: /tmp/cosmopolitan-master (master 源码树)
+# 改动 1: /dev/zero Windows 虚拟 (kFdDevZero=11)
+# 改动 2: mac 自身路径根治 (getprogramexecutablename IsXnu 分支 KERN_PROCARGS2)
+# 状态: 已打入 master 树并编译出对象(o/rel), 未发布(工具链打包未完成)
+
+### libc/intrin/fds.h
+### libc/calls/open-nt.c
+### libc/calls/fstatat-nt.c
+### libc/calls/read-nt.c
+### libc/calls/writev-nt.c
+### libc/calls/readv-nt.c
+### libc/calls/write-nt.c
+### libc/calls/readwrite-nt.c
+### libc/calls/pread.c
+### libc/calls/fstat-nt.c
+### libc/calls/printfds.c
+### libc/calls/ioctl.c
+### libc/calls/lseek-nt.c
+### libc/calls/getprogramexecutablename.greg.c

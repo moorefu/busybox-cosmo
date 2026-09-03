@@ -1,0 +1,20 @@
+# ---- build trees & fetched sources (regenerable) ----
+/src/
+/work/
+/dist/
+/.tmp/
+/refs/
+
+# ---- installed toolchain (provisioned, huge) ----
+/toolchain/cosmo/
+/toolchain/download/
+
+# ---- scratch / diagnostics ----
+/log/
+*.log
+*.DS_Store
+.DS_Store
+
+# editor/OS noise
+.idea/
+.vscode/
