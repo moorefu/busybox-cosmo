@@ -135,6 +135,38 @@ binfmt_misc 注册需内核 CONFIG_BINFMT_MISC (本测试内核未含, 未在 64
 | **结论: 全功能必走 assimilate?** | 否: Linux = binfmt 或原生 ELF (免工具); mac Intel = 内置 --assimilate (免工具); mac arm64 = APE 无 Mach-O 布局, assimilate 也转不出 mac 原生 → **Rosetta x86_64 为全功能路径** |
 | **待真机** | 按 docs/APPLE-SILICON-TEST.md 执行并回报 |
 
+## 三·九、macOS ARM64 0/155 根因 + apelink e_flags 修复 (2026-09-04)
+
+**真机现象**: macos-15 (arm64) CI 全 FAIL (0 PASS / 155 FAIL)。loader 分层诊断
+(D1–D4, 真机 runner): D1 `loader - BB BB uname`→Darwin OK; D2 (argv0=uname)→
+banner; D3 嵌套 grep→`-q: applet not found`; D4 `busybox grep`→OK。
+
+**根因链**:
+1. loader (ape/ape-m1.c TryElf ~line 832): 加载 ELF 时若
+   `e_flags & 0x1ffffff != EF_APE_MODERN(0x101ca75)` 且 argv 非空, 把
+   `argv[0]` 改写为 exe 解析路径 ("为旧二进制兼容")。
+2. cosmocc 链接的 `busybox_unstripped` 经 fixupobj 已带 e_flags=0x101ca75
+   (x86_64 树 OSABI=3、aarch64 树 OSABI=9, **两者都 MODERN**) — 直载该 ELF
+   到 loader 下 D2/D3 实测 OK → **OSABI 3 vs 9 与判据无关**。
+3. 但 apelink 组装 APE 时在 shell 前导自写 64 字节 ELF 头, **e_flags 硬编码 0**
+   (tool/build/apelink.c ~line 2081) → loader 视作非 MODERN → argv[0] 被改写
+   → busybox applet 名丢失 (argv0=grep 变 exe 路径 → dispatcher 把 `-q` 当
+   applet → `-q: applet not found`)。
+
+**修复**: `patches/cosmo/cosmo-apelink-apeflags-extra.patch` — shell ELF 头 e_flags
+改为 `EncodeWordAsPrintf(p, in->elf->e_flags, 4)` (保留载荷 MODERN 标志)。
+第三方非 cosmo 载荷 (e_flags=0) 行为不变。工具链 apelink 重建
+(o/x86_64/tool/build/apelink) 后全部正式产物重打。
+
+| 验证 (x86_64 mac loader 代理, 与 m1 同源逻辑) | 结果 |
+|---|---|
+| 补丁前 apelink 产物 D2/D3 | ✗ banner / `-q: applet not found` (复现 CI) |
+| 补丁后 apelink 产物 D2/D3 | ✅ uname→Darwin / NESTED-GREP-OK |
+| 补丁后 busybox-x86_64.ape (bb.sh 同化路径) deep-test | ✅ 31/31 |
+| 补丁后 busybox-x86_64.ape smoke-full | ✅ 0 FAIL (130 PASS, SOFT 4, SKIP 1) |
+| fat 64K 自检 (check-ape-64k.sh) | ✅ 双架构 loader Align 0x10000 全同余 |
+| macOS ARM64 CI (macos-15 arm64 真机) | 推送后复验 (本行随 CI 更新) |
+
 ## 四、重建 vs 历史基线的差异说明
 
 新构建产物 md5 与历史基线**不同属预期**, 原因:

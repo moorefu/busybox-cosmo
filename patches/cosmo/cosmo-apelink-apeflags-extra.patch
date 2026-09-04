@@ -1,0 +1,45 @@
+# cosmo master 工具补丁: apelink 保留载荷 ELF 的 APE-modern e_flags (2026-09-04)
+#
+# 问题: macOS ARM64 真机 (macos-15 arm64, 无内置 Mach-O 需外部 ape loader)
+#   busybox 0 PASS / 155 FAIL。根因链:
+#   1. loader (ape/ape-m1.c TryElf ~line 832) 加载 ELF 时, 若
+#      e_flags & 0x1ffffff != EF_APE_MODERN (0x101ca75) 且 argv 非空,
+#      会把 argv[0] 改写为 exe 解析路径 ("为旧二进制兼容")。
+#   2. cosmocc 链接出的 busybox_unstripped 经 fixupobj 已带
+#      EF_APE_MODERN (实测 e_flags=0x101ca75), loader 直载该 ELF 正常。
+#   3. 但 apelink 把 ELF 组装成 APE 时, 在 shell 前导里用 printf 自写一个
+#      64 字节 ELF 头, 其中 e_flags 被硬编码为 0 → loader 视作非 MODERN,
+#      argv[0] 被改写 → busybox applet 名丢失 (argv0=grep 变 exe 路径,
+#      dispatcher 把 "-q" 当 applet → "-q: applet not found" / 顶层 banner)。
+#
+# 修复: e_flags 处改为写入输入 ELF 自带的 e_flags (busybox 载荷 = 0x101ca75),
+#   使 apelink 产物的 shell ELF 头与载荷一致地携带 APE-modern 标志。
+#   loader 实测 (x86_64 mac loader 代理, 与 m1 同源逻辑): 顶层 applet
+#   (loader - BB uname) 与嵌套 STANDALONE exec (grep -q) 均恢复 OK;
+#   未打补丁产物同场景复现 "-q: applet not found"。第三方非 cosmo 载荷
+#   (e_flags=0) 行为不变。
+#
+# 应用对象: cosmopolitan master 源码树 (patch -p1), 与
+#   toolchain/build-custom.sh 的 cosmo-*-extra.patch 自动收集一致。
+
+### tool/build/apelink.c
+--- a/tool/build/apelink.c
++++ b/tool/build/apelink.c
+@@ -2077,10 +2077,13 @@
+       p = EncodeWordAsPrintf(p, in->elf->e_entry, 8);
+       in->printf_phoff = p;
+       p = stpcpy(p, "\\000\\000\\000\\000\\0\\0\\0\\0");
+-      p = stpcpy(p, "\\0\\0\\0\\0\\0\\0\\0\\0"  // 28: e_shoff
+-                    "\\0\\0\\0\\0"              // 30: e_flags
+-                    "\\100\\0"                  // 34: e_ehsize
+-                    "\\70\\0");                 // 36: e_phentsize
++      p = stpcpy(p, "\\0\\0\\0\\0\\0\\0\\0\\0"); // e_shoff
++      // e_flags: 保留输入 ELF 的 APE-modern 标志 (EF_APE_MODERN=0x101ca75)。
++      // 旧版硬编码 e_flags=0, 令 mac m1/x86 loader TryElf 视作非 MODERN,
++      // 把 argv[0] 改写为 exe 路径 → busybox applet 名丢失 (macOS ARM64)。
++      p = EncodeWordAsPrintf(p, in->elf->e_flags, 4); // e_flags
++      p = stpcpy(p, "\\100\\0" // e_ehsize
++                    "\\70\\0"); // e_phentsize
+       in->printf_phnum = p;
+       p = stpcpy(p, "\\000\\000"  // 38: e_phnum
+                     "\\0\\0"      // 3a: e_shentsize

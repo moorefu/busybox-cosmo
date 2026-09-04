@@ -11,7 +11,7 @@
 | 64KB 页 Linux aarch64 | 三环修复: ①loader 64K 对齐 (master 重建 ape-aarch64.elf) ②apelink 二进制重建 (官方 zip 未含补丁, 载荷曾放 0x4000 被 64K loader 拒) ③fat 内嵌 loader。另有 `busybox-arm64-linux-elf` 免 loader 直跑。qemu 真 64K 内核 (generic-64k) 实测: ELF/fat/单架构直接 exec 全 OK | ✅ 2026-09-04 (qemu 真 64K 内核模拟) |
 | APE 内置 `--assimilate` 仅 mac 有效 | Linux 上产物坏 ELF (cosmopolitan 布局局限: 只 printf ELF 头不重定位 phdr); Linux 转原生须外部 `assimilate` 工具或 binfmt (qemu 实测 2026-09-04) | cosmo 上游级, 已文档化 |
 | Linux loader 形态嵌套 exec 受限 | 无 binfmt 时直接 exec APE 走内嵌 loader; 顶层命令可用, ash 嵌套 exec 受限 (qemu arm64/x86 实测 smoke 1/46) | 需 binfmt/ELF/工具 |
-| mac Apple Silicon 原生 arm64 | 顶层可用 (bb.sh 用 loader '-' 模式免 cc); 嵌套 exec 受限 (cosmo 上游: APE 无 Mach-O arm64 布局, loader 转发不完整); **全功能走 Rosetta**: `arch -x86_64 ./busybox` | 待真机 (APPLE-SILICON-TEST.md) |
+| mac Apple Silicon 原生 arm64 | 顶层与嵌套 exec 曾 0/155 FAIL: 根因是 **apelink 在 shell ELF 头硬编码 e_flags=0**, mac m1 loader TryElf 视作非 APE-modern 而把 argv[0] 改写为 exe 路径 (applet 名丢失)。**已自建补丁修复**: `patches/cosmo/cosmo-apelink-apeflags-extra.patch` (shell ELF 头保留载荷 e_flags=EF_APE_MODERN), x86_64 mac loader 同源逻辑代理实测 D2/D3 + deep-test/smoke-full 全 OK | ✅ 自建补丁 (2026-09-04); macos-15 arm64 CI 真机复验 |
 | Windows fork | CreateProcess+全内存复制, 较慢; cosmo issue #1174 (accept 场景 socket 继承) 部分未根治 | connect 实测无碍 |
 | fat.ape 在 4K/16K 页 aarch64 真机 | qemu-system-aarch64 全系统 (4K 与 64K 内核) 已实测直接 exec + 嵌套 exec; 真机 (鲲鹏 UOS 4K/16K) 仍建议最终冒烟 | 模拟已覆盖, 真机待补 |
 | QuickEdit 鼠标补丁 | tcsetattr 定制已打入工具链 | 需 Windows 最终确认 |
