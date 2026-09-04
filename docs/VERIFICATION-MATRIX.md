@@ -47,7 +47,7 @@ busybox_unstripped md5: repro1 == repro2 == c6a1cd9dbc56db3b99fb41f72f8c2a98  �
 
 | 平台 | 用法 | smoke | deep | 备注 |
 |---|---|---|---|---|
-| Windows x86_64 | busybox.com | **46/46** | — | ps/dev/zero/Unicode/鼠标全绿 |
+| Windows x86_64 | busybox.com | **46/46** | 待 CI | ps/dev/zero/Unicode/鼠标全绿; deep-test 的 awk 引号用例经 heredoc/-f, smoke-full 网络服务端/信号项按平台缺口 SKIP (见 KNOWN-LIMITATIONS) |
 | Linux x86_64 | APE 直跑 (podman) | 45/46 | 31/31 | `[win]` 项除外 |
 | Linux aarch64 64K 页 | ELF 直跑 / APE+loader+FP | 45/46 | 31/31 | 鲲鹏 UOS 实机, 双路径同功能 |
 | macOS (Intel) | APE | 45/46 | — | 嵌套 exec 修复 |

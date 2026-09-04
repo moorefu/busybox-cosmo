@@ -20,12 +20,35 @@ t() {
 echo "===== busybox APE deep test ====="
 
 # --- awk 深度 ---
+# [win] awk 程序经 heredoc + awk -f 传入: Windows cosmo exec 重建 argv 时
+#   `\`+`"` 相邻序列会错乱 (x\"y → x"\y), 程序含转义引号(如 s["x"]/"N"/"%.2f")
+#   走 argv 会坏; 程序文件形式三平台一致 (见 docs/KNOWN-LIMITATIONS.md)。
 t "awk 字段+NF" sh -c 'echo "a b c d e" | awk "{print NF}" | grep -q 5'
-t "awk 数组聚合" sh -c 'printf "x 1\nx 2\ny 3\n" | awk "{s[\$1]+=\$2} END{print s[\"x\"]}" | grep -q 3'
-t "awk 正则+sub" sh -c 'echo "abc123def" | awk "{gsub(/[0-9]+/, \"N\"); print}" | grep -q abcNdef'
+t "awk 数组聚合" sh -c '
+cat > .deep-awk1.$$ <<"EOF"
+{s[$1]+=$2} END{print s["x"]}
+EOF
+printf "x 1\nx 2\ny 3\n" | awk -f .deep-awk1.$$ | grep -q 3
+rc=$?; rm -f .deep-awk1.$$; exit $rc'
+t "awk 正则+sub" sh -c '
+cat > .deep-awk2.$$ <<"EOF"
+{gsub(/[0-9]+/, "N"); print}
+EOF
+echo "abc123def" | awk -f .deep-awk2.$$ | grep -q abcNdef
+rc=$?; rm -f .deep-awk2.$$; exit $rc'
 t "awk BEGIN/END" sh -c 'echo "l1" | awk "BEGIN{n=0} {n++} END{print n}" | grep -q 1'
-t "awk printf 格式" sh -c 'echo "3.14159" | awk "{printf \"%.2f\\n\", \$1}" | grep -q 3.14'
-t "awk 多条件分支" sh -c 'seq 1 20 2>/dev/null | awk "\$1%2==0{print \"e\"} \$1%2==1{print \"o\"}" | sort | uniq -c | wc -l | grep -q 2'
+t "awk printf 格式" sh -c '
+cat > .deep-awk3.$$ <<"EOF"
+{printf "%.2f\n", $1}
+EOF
+echo "3.14159" | awk -f .deep-awk3.$$ | grep -q 3.14
+rc=$?; rm -f .deep-awk3.$$; exit $rc'
+t "awk 多条件分支" sh -c '
+cat > .deep-awk4.$$ <<"EOF"
+$1%2==0{print "e"} $1%2==1{print "o"}
+EOF
+seq 1 20 2>/dev/null | awk -f .deep-awk4.$$ | sort | uniq -c | wc -l | grep -q 2
+rc=$?; rm -f .deep-awk4.$$; exit $rc'
 t "awk 字符串函数" sh -c 'echo "Hello World" | awk "{print tolower(\$0)}" | grep -q "hello world"'
 t "awk getline" sh -c 'printf "1\n2\n3\n" | awk "{getline x; print x}" | grep -q 2'
 

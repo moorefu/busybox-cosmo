@@ -13,6 +13,14 @@
 PASS=0; FAIL=0; SKIP=0; SOFT=0
 LIST=""
 
+# 平台判定: cosmo Windows 的 uname -s = "Windows"
+# (信号模拟、fork 后 accept 的 socket 继承 = cosmo #1174 部分未根治,
+#  见 docs/KNOWN-LIMITATIONS.md → 部分平台相关用例跳过/软处理, 防挂死)
+IS_WIN=0
+case "$(uname -s 2>/dev/null)" in
+	*[Ww]indows*|*[Ww]in32*) IS_WIN=1 ;;
+esac
+
 bb_list() { [ -n "$LIST" ] || LIST="$(busybox --list 2>/dev/null)"; echo "$LIST"; }
 
 # 工具存在性
@@ -55,6 +63,11 @@ tm() { # tm <desc> <pattern> <cmd...>
 	else
 		echo "FAIL: $desc"; FAIL=$((FAIL+1)); g_FAIL=$((g_FAIL+1))
 	fi
+}
+# Windows 平台缺口(cosmo 模拟限制) → 记 SKIP 不执行, 避免挂死/误判
+ws() { # ws <desc> <原因>
+	echo "SKIP: $1 ($2)"
+	SKIP=$((SKIP+1)); g_SKIP=$((g_SKIP+1))
 }
 
 group() {
@@ -113,7 +126,13 @@ tm "sed 替换" "world" sh -c 'echo hello | sed s/hello/world/'
 tm "sed 地址行" "second" sh -c 'printf "a\nsecond\nc\n" | sed -n 2p'
 t "sed 删除行" sh -c 'printf "a\nb\n" | sed 1d | grep -q "^b$"'
 tm "awk 字段" "2" sh -c 'echo "1 2 3" | awk "{print \$2}"'
-tm "awk NF/printf" "x:y" sh -c 'echo "x y" | awk "{printf \"%s:%s\\n\",\$1,\$2}"'
+# awk 程序含转义引号 (\"...) 走 argv 在 Windows cosmo exec 会错乱 → heredoc + awk -f
+tm "awk NF/printf" "x:y" sh -c '
+	cat > .sf-awk.$$ <<"EOF"
+{printf "%s:%s\n", $1, $2}
+EOF
+	echo "x y" | awk -f .sf-awk.$$
+	rc=$?; rm -f .sf-awk.$$; exit $rc'
 tm "sort 默认" "^a$" sh -c 'printf "b\na\nc\n" | sort | head -1'
 tm "sort -n 数值" "^1$" sh -c 'printf "10\n2\n1\n" | sort -n | head -1'
 t "sort -u" sh -c 'printf "1\n1\n2\n" | sort -u | wc -l | grep -q "^2$"'
@@ -175,7 +194,7 @@ grep -q line1 sf.h; rm -f sf.h'
 t "位置参数 shift" sh -c 'set a b c; shift; test "$1" = b'
 t "test 运算" sh -c 'test 5 -gt 3 -a 2 -le 2'
 t "引号保留" sh -c 'x="a b"; for w in $x; do echo $w; done | wc -l | grep -q 2'
-t "环境变量导出" sh -c 'export E1=v1; sh -c "test \"\$E1\" = v1"'
+t "环境变量导出" sh -c 'export E1=v1; sh -c "test \$E1 = v1"'
 t "局部变量陷阱修正" sh -c 'i=0; for i in 1 2; do :; done; test "$i" = 2'
 t "glob 展开" sh -c 'mkdir -p sf.g; touch sf.g/a1 sf.g/b2; test "$(echo sf.g/* | wc -w)" = 2; rm -rf sf.g'
 t "printf %s" sh -c 'test "$(printf "%s-%s" a b)" = a-b'
@@ -193,7 +212,11 @@ ts "arch(输出架构)" sh -c 'arch 2>/dev/null | grep -q .'
 t "sleep 0.5 后继续" sh -c 'sleep 0.5 && echo ok | grep -q ok'
 tm "date 格式" "^20[0-9][0-9]-" sh -c 'date +%Y-%m-%d'
 t "date -u UTC" sh -c 'date -u | grep -qiE "UTC|GMT"'
-t "timeout 杀超时" sh -c 'timeout 1 sh -c "sleep 5" >/dev/null 2>&1; r=$?; test $r != 0'
+if [ "$IS_WIN" = 1 ]; then
+	ws "timeout 杀超时" "win: cosmo 信号/进程组模拟限制, 见 KNOWN-LIMITATIONS"
+else
+	t "timeout 杀超时" sh -c 'timeout 1 sh -c "sleep 5" >/dev/null 2>&1; r=$?; test $r != 0'
+fi
 t "free 内存行" sh -c 'free 2>/dev/null | grep -q "Mem:"'
 t "uptime" sh -c 'uptime 2>/dev/null | grep -qiE "up|min|day|load"'
 ts "ps (平台/沙箱软项)" sh -c 'ps -o pid= 2>/dev/null | head -1 | grep -qE "^[0-9]" || ps | head -2 | grep -qiE "pid|cmd"'
@@ -211,51 +234,60 @@ gsum
 GNO="G"
 group "本地网络(回环, 不依赖外网)"
 P=23241
-# 简易回显服务器: busybox nc -l -p -e cat(若 -e 支持) 否则退化为只测连接
-if nc -h 2>&1 | grep -q '\-e'; then
-	t "nc 回环回显" sh -c "
-		nc -l -p $P -e cat >/dev/null 2>&1 &
-		srv=\$!
-		sleep 0.3
-		out=\$(echo hello | nc -w2 127.0.0.1 $P 2>/dev/null)
-		kill \$srv 2>/dev/null
-		test \"\$out\" = hello"
-	tn "telnet 回环回显" "telnet 本地回显" sh -c "
-		nc -l -p $P -e cat >/dev/null 2>&1 &
-		srv=\$!
-		sleep 0.3
-		out=\$(echo tlx | telnet 127.0.0.1 $P 2>/dev/null | tr -d '\r')
-		kill \$srv 2>/dev/null
-		echo \"\$out\" | grep -q tlx"
+if [ "$IS_WIN" = 1 ]; then
+	# cosmo #1174: Windows fork 后 accept 场景 socket 继承未根治 + 信号/进程模拟
+	# → nc -l / tcp 服务端回环测试不可靠(会 FAIL 甚至挂死), 跳过; 客户端 nslookup 保留
+	ws "nc 本地回环(服务端)" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
+	ws "telnet 本地回显" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
+	ws "tcp 双向 socket" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
+	echo "      (Windows: 网络组以 nslookup 客户端为准; nc/telnet/tcp 服务端缺口见 KNOWN-LIMITATIONS)"
 else
-	# 无 -e: 仅验证 TCP 连接建立(服务器能 accept)
-	t "nc listen/connect 握手" sh -c "
-		nc -l -p $P >/dev/null 2>&1 &
+	# 简易回显服务器: busybox nc -l -p -e cat(若 -e 支持) 否则退化为只测连接
+	if nc -h 2>&1 | grep -q '\-e'; then
+		t "nc 回环回显" sh -c "
+			nc -l -p $P -e cat >/dev/null 2>&1 &
+			srv=\$!
+			sleep 0.3
+			out=\$(echo hello | nc -w2 127.0.0.1 $P 2>/dev/null)
+			kill \$srv 2>/dev/null
+			test \"\$out\" = hello"
+		tn "telnet 回环回显" "telnet 本地回显" sh -c "
+			nc -l -p $P -e cat >/dev/null 2>&1 &
+			srv=\$!
+			sleep 0.3
+			out=\$(echo tlx | telnet 127.0.0.1 $P 2>/dev/null | tr -d '\r')
+			kill \$srv 2>/dev/null
+			echo \"\$out\" | grep -q tlx"
+	else
+		# 无 -e: 仅验证 TCP 连接建立(服务器能 accept)
+		t "nc listen/connect 握手" sh -c "
+			nc -l -p $P >/dev/null 2>&1 &
+			srv=\$!
+			sleep 0.3
+			echo ping | nc -w2 127.0.0.1 $P >/dev/null 2>&1
+			kill \$srv 2>/dev/null
+			true"
+		ts "telnet 连接握手(soft)" sh -c "
+			nc -l -p $P >/dev/null 2>&1 &
+			srv=\$!
+			sleep 0.3
+			echo q | telnet 127.0.0.1 $P 2>/dev/null; r=\$?
+			kill \$srv 2>/dev/null
+			test \$r = 0"
+	fi
+	# TCP 客户端纯连接(无需服务端回显语义) — 用 nc -l 后台
+	t "tcp 双向 socket 基本" sh -c "
+		nc -l -p $((P+1)) >/tmp/ncout 2>&1 &
 		srv=\$!
 		sleep 0.3
-		echo ping | nc -w2 127.0.0.1 $P >/dev/null 2>&1
+		printf 'abc' | nc -w2 127.0.0.1 $((P+1)) >/dev/null 2>&1
+		sleep 0.2
 		kill \$srv 2>/dev/null
-		true"
-	ts "telnet 连接握手(soft)" sh -c "
-		nc -l -p $P >/dev/null 2>&1 &
-		srv=\$!
-		sleep 0.3
-		echo q | telnet 127.0.0.1 $P 2>/dev/null; r=\$?
-		kill \$srv 2>/dev/null
-		test \$r = 0"
+		grep -q abc /tmp/ncout 2>/dev/null; rc=\$?
+		rm -f /tmp/ncout
+		test \$rc = 0"
+	echo "      (网络组以 nc/telnet 本地回环为准, wget 走外网组可选)"
 fi
-# TCP 客户端纯连接(无需服务端回显语义) — 用 nc -l 后台
-t "tcp 双向 socket 基本" sh -c "
-	nc -l -p $((P+1)) >/tmp/ncout 2>&1 &
-	srv=\$!
-	sleep 0.3
-	printf 'abc' | nc -w2 127.0.0.1 $((P+1)) >/dev/null 2>&1
-	sleep 0.2
-	kill \$srv 2>/dev/null
-	grep -q abc /tmp/ncout 2>/dev/null; rc=\$?
-	rm -f /tmp/ncout
-	test \$rc = 0"
-echo "      (网络组以 nc/telnet 本地回环为准, wget 走外网组可选)"
 ts "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
 gsum
 
