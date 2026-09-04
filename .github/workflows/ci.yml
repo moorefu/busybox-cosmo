@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           scripts/check-ape-64k.sh dist/min/busybox.com
           rm -rf /tmp/minchk && mkdir -p /tmp/minchk && cd /tmp/minchk
-          unzip -q /Users/runner/work/busybox-cosmo/busybox-cosmo/dist/busybox-min.zip
+          unzip -q "$GITHUB_WORKSPACE/dist/busybox-min.zip"
           # Linux x86 无 binfmt/assimilate 场景: bb.sh loader 形态 + 自备 ~/.ape-1.10
           export HOME=/tmp/minchk
           cp -f ape-loader-x86_64 "$HOME/.ape-1.10" && chmod +x "$HOME/.ape-1.10"
