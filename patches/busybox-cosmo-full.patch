@@ -6990,7 +6990,6 @@
  # Alternative (disabled) MD5 implementation
  #lib-y += hash_md5prime.o
  lib-y += messages.o
-
 --- a/libbb/appletlib.c
 +++ b/libbb/appletlib.c
 @@ -722,6 +722,9 @@
@@ -7013,18 +7012,23 @@
  int scripted_main(int argc UNUSED_PARAM, char **argv) MAIN_EXTERNALLY_VISIBLE;
  int scripted_main(int argc UNUSED_PARAM, char **argv)
  {
-@@ -1042,6 +1048,10 @@
+@@ -1042,6 +1048,16 @@
  int main(int argc UNUSED_PARAM, char **argv)
  #endif
  {
 +#if defined(__COSMOPOLITAN__)
 +	/* cosmo: execvp(/proc/self/exe) 不可用, 记录 argv[0] 供 exec 自身用 */
 +	bb_argv0 = argv[0];
++	/* 预热: main 上下文(非 vfork)里解析一次自身 exec 路径并缓存。
++	 * ash STANDALONE 在 vfork 子进程里也要用该路径 —— 若首调发生在
++	 * vfork 子进程 (cosmo GetProgramExecutableName 会写共享内存 +
++	 * sysctl), m1 loader 下会破坏父进程状态 → 嵌套 exec 的 argv 错乱
++	 * (macOS ARM64 smoke-full 崩坏 "-qX: not found")。 */
++	get_busybox_exec_path();
 +#endif
  #if 0
  	/* TODO: find a use for a block of memory between end of .bss
  	 * and end of page. For example, I'm getting "_end:0x812e698 2408 bytes"
-
 --- a/libbb/cosmo_stubs.c
 +++ b/libbb/cosmo_stubs.c
 @@ -0,0 +1,436 @@
