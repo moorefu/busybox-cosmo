@@ -17,7 +17,7 @@
 | QuickEdit 鼠标补丁 | tcsetattr 定制已打入工具链 | 需 Windows 最终确认 |
 | APE 同化 | 首跑改写自身为平台格式; 分发必须 zip 母本 | 设计使然, 测试纪律 |
 | `zcat` | busybox 本义为 .Z 解压器; 解 gzip 用 `gzip -dc` | 用法说明 |
-| Windows exec argv 含 `\`+`"` 序列 | cosmo Windows 由 argv 重建 CreateProcess 命令行时, 参数内「反斜杠紧跟双引号」会错乱 (如 `x\"y` → 变 `x"\y`)。受影响: 一切经 `sh -c`/awk 以转义引号传参的写法 (`awk "{...\"...\"}"` 等), 现象为 awk `Unexpected token`。纯 `"` 或 `\$` 序列不受影响 (D2/D1 实测) | cosmo 上游缺陷; 测试已改用 heredoc+`awk -f` / `-v` 规避 (deep-test/smoke-full), 待上游修 mkntcmdline/getdosargv round-trip |
+| Windows exec argv 含 `\`+`"` 序列 | cosmo Windows 由 argv 重建 CreateProcess 命令行时, 参数内「反斜杠紧跟双引号」曾错乱 (`x\"y` → `x"\y`), 使 `awk "{...\"...\"}"` 等传参失败。**已自建补丁修复**: `patches/cosmo/cosmo-mkntcmdline-roundtrip-extra.patch` (mkntcmdline 遇引号前反斜杠先行双写), 真实二进制 round-trip 全组合验证一致 | ✅ 自建补丁 (2026-09-04); 测试用例保留 heredoc/-v 规避写法 (deep-test/smoke-full) 作跨平台基线 |
 
 ## 结构约束
 

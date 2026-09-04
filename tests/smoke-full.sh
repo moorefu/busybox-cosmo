@@ -126,13 +126,7 @@ tm "sed 替换" "world" sh -c 'echo hello | sed s/hello/world/'
 tm "sed 地址行" "second" sh -c 'printf "a\nsecond\nc\n" | sed -n 2p'
 t "sed 删除行" sh -c 'printf "a\nb\n" | sed 1d | grep -q "^b$"'
 tm "awk 字段" "2" sh -c 'echo "1 2 3" | awk "{print \$2}"'
-# awk 程序含转义引号 (\"...) 走 argv 在 Windows cosmo exec 会错乱 → heredoc + awk -f
-tm "awk NF/printf" "x:y" sh -c '
-	cat > .sf-awk.$$ <<"EOF"
-{printf "%s:%s\n", $1, $2}
-EOF
-	echo "x y" | awk -f .sf-awk.$$
-	rc=$?; rm -f .sf-awk.$$; exit $rc'
+tm "awk NF/printf" "x:y" sh -c 'echo "x y" | awk "{printf \"%s:%s\\n\",\$1,\$2}"'
 tm "sort 默认" "^a$" sh -c 'printf "b\na\nc\n" | sort | head -1'
 tm "sort -n 数值" "^1$" sh -c 'printf "10\n2\n1\n" | sort -n | head -1'
 t "sort -u" sh -c 'printf "1\n1\n2\n" | sort -u | wc -l | grep -q "^2$"'
@@ -194,7 +188,7 @@ grep -q line1 sf.h; rm -f sf.h'
 t "位置参数 shift" sh -c 'set a b c; shift; test "$1" = b'
 t "test 运算" sh -c 'test 5 -gt 3 -a 2 -le 2'
 t "引号保留" sh -c 'x="a b"; for w in $x; do echo $w; done | wc -l | grep -q 2'
-t "环境变量导出" sh -c 'export E1=v1; sh -c "test \$E1 = v1"'
+t "环境变量导出" sh -c 'export E1=v1; sh -c "test \"\$E1\" = v1"'
 t "局部变量陷阱修正" sh -c 'i=0; for i in 1 2; do :; done; test "$i" = 2'
 t "glob 展开" sh -c 'mkdir -p sf.g; touch sf.g/a1 sf.g/b2; test "$(echo sf.g/* | wc -w)" = 2; rm -rf sf.g'
 t "printf %s" sh -c 'test "$(printf "%s-%s" a b)" = a-b'

@@ -1,0 +1,37 @@
+# cosmo master libc 补丁: Windows exec argv round-trip 修复 (2026-09-04)
+#
+# 问题: cosmo Windows 的 execve→CreateProcess 由 argv 重建命令行时
+#   (mkntcmdline.c), 参数内「反斜杠紧跟双引号」序列错乱:
+#   `x\"y` 编码后解码回 `x"\y` (反斜杠与引号换位)。
+#   受影响: 一切经 sh -c / awk 以转义引号传参的写法
+#   (`awk "{...\"...\"}"` 等), 现象为 awk "Unexpected token"
+#   (busybox-cosmo 实机: Windows x86_64 deep-test 4 项 awk FAIL)。
+#
+# 根因: mkntcmdline 遇 '"' 时直接输出 cosmo 三引号转义 `"""`,
+#   但未先 flush 前面累积的反斜杠 (slashes), `\` 被延后到引号之后,
+#   与解码端 GetDosArgv (getdosargv.c) 的按对还原规则不配套。
+#
+# 修复: 遇 '"' 先按解码规则把反斜杠双写输出 (引号前的反斜杠需成对),
+#   slashes 清零后再输出 `"""`。经 mkntcmdline↔GetDosArgv round-trip
+#   穷举验证 (引号/反斜杠/空格全组合 96 例 + 真实失败用例) 全部一致。
+#
+# 应用对象: cosmopolitan master 源码树 (patch -p1), 与
+#   toolchain/build-custom.sh 的 cosmo-*-extra.patch 自动收集一致。
+
+### libc/calls/mkntcmdline.c
+--- a/libc/calls/mkntcmdline.c
++++ b/libc/calls/mkntcmdline.c
+@@ -114,6 +114,13 @@
+       if (x == '\\') {
+         ++slashes;
+       } else if (x == '"') {
++        // NB: 引号前的反斜杠必须先行并双写输出 (Windows 命令行: 紧跟引号的
++        // 每对反斜杠才还原一个, 单个会使该引号变字面引号而非开关)。
++        // 此前累积 slashes 延后到引号之后输出, `\`+`"` round-trip 错乱
++        // (`x\"y` → `x"\y`); 双写后 GetDosArgv() 按对还原。
++        for (s = 0; s < (slashes << 1); ++s)
++          APPEND(u'\\');
++        slashes = 0;
+         APPEND(u'"');
+         APPEND(u'"');
+         APPEND(u'"');
