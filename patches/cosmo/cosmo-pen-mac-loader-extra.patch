@@ -1,0 +1,75 @@
+# cosmo master libc 补丁: mac loader 形态下程序名解析到载荷真实路径 (2026-09-04)
+#
+# 问题: macOS 上程序经 ape loader (bb.sh / cosmo execve 用 "loader - PROG ..."
+# 形态) 加载时, 启动期 __program_executable_name 取 loader 传入的 AT_EXECFN
+# (=loader 自身路径); GetProgramExecutableName() 惰性解析走 KERN_PROCARGS2,
+# 首串同样是 loader 路径。旧修复 (cosmo-custom-full.patch) 检测到 OldApeLoader
+# 后回退 argv[0] —— 但 busybox 多层 STANDALONE 嵌套 exec 后 argv[0] 是 applet
+# 名 ("sh"/"sed"), realpath 必败 → busybox 找不到自身 → ash 回落 PATH 执行
+# 系统原生工具 (macOS ARM64 loader 形态 deep-test 3 + smoke 7 项 FAIL, 现象
+# BSD sed/wc 行为、'busybox: not found')。
+#
+# 修复: OldApeLoader 场景下改从 KERN_PROCARGS2 的 argv 区解析 loader 的
+# 载荷参数 (实测布局: [exe, "", argv0, argv1, ...]; loader argv[1]=='-' 时
+# 载荷路径 = argv[2], 否则 = argv[1]) —— 该路径在任意嵌套深度都指向真实
+# 被加载的 APE, 与 argv[0] 无关。配合 busybox get_busybox_exec_path() 改调
+# GetProgramExecutableName() (busybox-cosmo-full.patch 内 messages.c)。
+#
+# 验证: x86_64 mac loader (ape-m1-loader-src.c 同源代理, 名 ~/.ape-1.10):
+#   bootPEN/lazyPEN 深度 1/2 均=载荷路径; loader 形态 deep-test 31/31、
+#   smoke-full 173 PASS/0 FAIL (修复前 28/31 + 7 FAIL)。Linux/Windows 分支
+#   未触碰 (仅 IsXnu 内 OldApeLoader 分支)。
+#
+# 应用对象: cosmopolitan master 源码树 (patch -p1), 与
+#   toolchain/build-custom.sh 的 cosmo-*-extra.patch 自动收集一致。
+
+--- a/libc/calls/getprogramexecutablename.greg.c
++++ b/libc/calls/getprogramexecutablename.greg.c
+@@ -168,10 +168,43 @@
+         if (elen > 0 && elen + 1 <= sizeof(g_prog.u.buf)) {
+           memcpy(g_prog.u.buf, exe, elen + 1);
+           if (OldApeLoader(g_prog.u.buf)) {
+-            /* loader 路径: 回退 argv[0] (相对路径则拼 cwd) */
+-            const char *q = __argv && __argv[0] ? __argv[0] : "";
+-            if (CopyWithCwd(q, g_prog.u.buf,
+-                            g_prog.u.buf + sizeof(g_prog.u.buf))) {
++            /* ape loader 以 exec 链首进程运行载荷: 载荷的真实程序路径在
++             * loader 的 argv 里, 而非载荷自身 argv[0] —— 多层 STANDALONE
++             * exec 后 argv[0] 是 applet 名 ("sh"/"sed"), realpath 必败。
++             *   loader -  PROG ARGV0 ARGV1.. → loader argv[2] = PROG
++             *   loader     PROG ARGV1..      → loader argv[1] = PROG
++             * KERN_PROCARGS2 在 exe 串(pb+4)之后紧跟该进程原始 argv
++             * (实测布局 [exe, "", argv[0]=loader 路径, argv[1]='-'|PROG,
++             * ...], 跳前导空串后即 loader argv), 依序解析即得 PROG
++             * (可能相对, 用 cwd 拼绝对)。
++             * 2026-09-04 修复 (mac loader 形态深度嵌套 exec 的
++             * __program_executable_name 依旧错误 → STANDALONE 自 exec
++             * 失败 → 回落 PATH 原生工具)。 */
++            const char *q = NULL;
++            const char *s2 = pb + sizeof(int) + elen + 1; /* argv 区起点 */
++            const char *e2 = pb + need;
++            const char *av[8] = {0};
++            int ai = 0;
++            while (ai < 7 && s2 < e2) {
++              size_t al = strnlen(s2, e2 - s2);
++              av[ai++] = s2;
++              if (al == 0) { ++s2; continue; }
++              s2 += al + 1;
++            }
++            /* 实测 mac KERN_PROCARGS2 argv 区 = [exe, "", argv0, argv1, ...]
++             * (exe 后有分隔空串), 先跳到首个非空串 (loader argv[0])。 */
++            {
++              int f = 0;
++              while (f < ai && !*av[f]) ++f;
++              if (av[f + 1] && !strcmp(av[f + 1], "-") && av[f + 2])
++                q = av[f + 2];  /* loader - PROG ARGV0.. → PROG */
++              else if (av[f + 1])
++                q = av[f + 1];  /* loader PROG .. → PROG */
++              else if (__argv && __argv[0])
++                q = __argv[0];  /* 兜底: 载荷 argv[0] */
++            }
++            if (q && CopyWithCwd(q, g_prog.u.buf,
++                                 g_prog.u.buf + sizeof(g_prog.u.buf))) {
+               goto UseBuf;
+             }
+           }

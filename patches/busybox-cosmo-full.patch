@@ -7464,10 +7464,9 @@
 +	fputs("unshare: not supported in this build\n", stderr);
 +	return 1;
 +}
-
 --- a/libbb/messages.c
 +++ b/libbb/messages.c
-@@ -27,7 +27,38 @@
+@@ -27,7 +27,45 @@
  
  const char bb_hexdigits_upcase[] ALIGN1 = "0123456789ABCDEF";
  
@@ -7479,16 +7478,23 @@
 + * 在 APE 启动时填充的 __program_executable_name(绝对路径)。 */
 +#include <limits.h>
 +extern char *__program_executable_name;
++extern char *GetProgramExecutableName(void);
 +const char *get_busybox_exec_path(void)
 +{
 +	static char bb_busybox_exec_path_buf[PATH_MAX];
 +
 +	if (!bb_busybox_exec_path_buf[0]) {
 +		const char *p = NULL;
-+		/* 1) argv[0] 可解析时优先(首层启动 argv[0]=busybox 路径)。
-+		 * 2) 多层 exec 后 argv[0] 是 applet 名("sh"/"grep"),realpath 失败,
-+		 *    回落 __program_executable_name: Windows 上为 GetModuleFileName
-+		 *    (可靠); mac/其它平台若该值不可靠,则退化为 CONFIG 默认。 */
++		/* 1) cosmo 惰性解析 GetProgramExecutableName() 优先: mac 上它会走
++		 *    KERN_PROCARGS2, loader ('-') 形态下解析出 loader argv 里的
++		 *    载荷真实路径 (loader - PROG ARGV0.. → PROG) —— 任意嵌套深度
++		 *    都成立 (2026-09-04 mac loader STANDALONE 自 exec 修复)。
++		 * 2) 其次 argv[0] (首层启动 argv[0]=busybox 路径)。
++		 * 3) 再回落启动期 __program_executable_name (loader 形态下为
++		 *    loader 自身路径, 仅作最后兜底) / CONFIG 默认。 */
++		p = GetProgramExecutableName();
++		if (p && p[0] && realpath(p, bb_busybox_exec_path_buf))
++			return bb_busybox_exec_path_buf;
 +		if (bb_argv0 && realpath(bb_argv0, bb_busybox_exec_path_buf))
 +			return bb_busybox_exec_path_buf;
 +		p = __program_executable_name;
@@ -7506,7 +7512,6 @@
  const char bb_default_login_shell[] ALIGN1 = LIBBB_DEFAULT_LOGIN_SHELL;
  /* util-linux manpage says /sbin:/bin:/usr/sbin:/usr/bin,
   * but I want to save a few bytes here. Check libbb.h before changing! */
-
 --- a/libbb/u_signal_names.c
 +++ b/libbb/u_signal_names.c
 @@ -26,7 +26,49 @@

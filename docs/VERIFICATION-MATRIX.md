@@ -165,6 +165,27 @@ banner; D3 嵌套 grep→`-q: applet not found`; D4 `busybox grep`→OK。
 | 补丁后 busybox-x86_64.ape (bb.sh 同化路径) deep-test | ✅ 31/31 |
 | 补丁后 busybox-x86_64.ape smoke-full | ✅ 0 FAIL (130 PASS, SOFT 4, SKIP 1) |
 | fat 64K 自检 (check-ape-64k.sh) | ✅ 双架构 loader Align 0x10000 全同余 |
+
+**第 2 层根因 (loader 深度嵌套 STANDALONE exec)** — apelink 修复后 macOS ARM64
+真机仍 28/31 + 7 FAIL (sed 行追加/保持空间/-i、sort -u、wc -c/-m、od、nc、tcp、
+busybox --list): loader '-' 形态多层 exec 后 argv[0]=applet 名 ("sh"/"sed"),
+busybox `get_busybox_exec_path()` realpath(argv[0]) 必败、回落
+`__program_executable_name` (loader 启动期传 AT_EXECFN=loader 路径) 也非自身
+→ STANDALONE 自 exec 失败 → ash 走 PATH 执行 macOS 原生 BSD 工具。
+修复:
+1. `patches/cosmo/cosmo-pen-mac-loader-extra.patch`: GetProgramExecutableName()
+   XNU/OldApeLoader 分支改从 KERN_PROCARGS2 argv 区解析 loader 载荷路径
+   (实测布局 [exe, "", argv0, argv1, ...]; loader argv[1]=='-' → argv[2]=PROG,
+   否则 argv[1]=PROG), 任意嵌套深度成立。
+2. busybox `libbb/messages.c` (busybox-cosmo-full.patch): get_busybox_exec_path()
+   优先调 GetProgramExecutableName()。
+
+| 验证 (x86_64 mac loader 代理 = ape-m1-loader-src.c 同源, 名 ~/.ape-1.10) | 结果 |
+|---|---|
+| bootPEN / lazyPEN 深度 1/2 | ✅ 均 = 载荷路径 (修复前 = loader 路径) |
+| loader 形态 deep-test | ✅ 31/31 (修复前 28/31) |
+| loader 形态 smoke-full | ✅ 173 PASS / 0 FAIL (修复前 7 FAIL) |
+| bb.sh 同化原生路径回归 | ✅ 31/31 + 173/0 (无回归) |
 | macOS ARM64 CI (macos-15 arm64 真机) | 推送后复验 (本行随 CI 更新) |
 
 ## 四、重建 vs 历史基线的差异说明
