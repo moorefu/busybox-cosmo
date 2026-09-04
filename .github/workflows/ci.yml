@@ -76,6 +76,29 @@ jobs:
           path: dist/release/release
           if-no-files-found: error
           retention-days: 7
+      - name: 生成最小发布包 (--min)
+        run: scripts/package-release.sh --min
+      - name: 校验 min 包 (64K + Linux x86 loader 端到端)
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/check-ape-64k.sh dist/min/busybox.com
+          rm -rf /tmp/minchk && mkdir -p /tmp/minchk && cd /tmp/minchk
+          unzip -q /Users/runner/work/busybox-cosmo/busybox-cosmo/dist/busybox-min.zip
+          # Linux x86 无 binfmt/assimilate 场景: bb.sh loader 形态 + 自备 ~/.ape-1.10
+          export HOME=/tmp/minchk
+          cp -f ape-loader-x86_64 "$HOME/.ape-1.10" && chmod +x "$HOME/.ape-1.10"
+          BUSYBOX_COSMO_CACHE=/tmp/minchk-cache ./busybox uname -m | grep -q x86_64
+          echo "min top-level OK"
+          BUSYBOX_COSMO_CACHE=/tmp/minchk-cache ./busybox sh -c 'echo x | grep -qE x && echo MIN-NESTED-OK'
+          echo "min nested exec OK"
+      - name: 上传 min 包
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: busybox-min
+          path: dist/busybox-min.zip
+          if-no-files-found: error
+          retention-days: 7
 
   unix-matrix:
     needs: build

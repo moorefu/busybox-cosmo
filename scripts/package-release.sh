@@ -42,8 +42,10 @@ busybox-cosmo 最小发布包 (fat 单文件)
   busybox          零安装 launcher (内含 Linux binfmt 部署子命令)
                    mac x86_64: fat 内置 --assimilate 自同化 → Mach-O (免外部工具)
                    mac arm64 : 自动把 ape-loader-macos-arm64 放 ~/.ape-1.10 免 cc;
-                               完整 shell 需完整包的 assimilate 工具
-                   Linux: 无 binfmt 时退 loader 形态 (顶层命令可用)
+                               loader 形态已全功能 (2026-09-04 修复: MODERN 标志/
+                               载荷路径解析, 嵌套 exec 可用)
+                   Linux: 无 binfmt 时退 loader 形态 (自备 ~/.ape-1.10 或
+                           --setup-linux 后嵌套 exec 亦全功能)
   ape-loader-*     --setup-linux 用 (aarch64/x86_64) + mac 免 cc (macos-arm64/x86_64)
   README.txt       本说明
 
@@ -59,7 +61,8 @@ busybox-cosmo 最小发布包 (fat 单文件)
 
 cache: $BUSYBOX_COSMO_CACHE → $XDG_CACHE_HOME/busybox-cosmo → ~/.cache/busybox-cosmo
 局限: 见完整包 RUN-NO-SELF-MODIFY.md。loader 形态 (无 binfmt Linux / mac arm64)
-嵌套 exec 受限; 完整 shell: mac x86_64 自同化, Linux --setup-linux, mac arm64 用完整包。
+自 2026-09-04 修复后嵌套 exec 已全功能 (launcher 自动置 ~/.ape-1.10);
+全功能替代: mac x86_64 自同化, Linux sudo ./busybox --setup-linux。
 EOF
   ( cd "$MIN_OUT" && zip -q "$DIST_DIR/busybox-min.zip" busybox.com busybox \
       ape-loader-aarch64 ape-loader-x86_64 \
