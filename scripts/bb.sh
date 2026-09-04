@@ -117,6 +117,23 @@ mkdir -p "$CACHE"
 KEY="$OS-$ARCH-$( (cksum < "$MASTER") 2>/dev/null | cut -d' ' -f1 )"
 RUN="$CACHE/busybox-$KEY"
 
+# mac arm64 loader 预置:**每次调用**都校验 (不能只放创建分支)。
+# cosmo OldApeLoader 按 basename (~/.ape-1.10) 识别 loader; 若 LDR 回退到
+# 发行件原名 (ape-loader-macos-arm64) 则不被识别 → 载荷把 loader 路径当自身
+# exec 路径 → STANDALONE 嵌套 exec argv 错乱 (macOS ARM64 deep→smoke 顺序
+# smoke 崩坏根因, 2026-09-04 实测定案)。
+APELDR="$HOME/.ape-1.10"
+if [ "$OS" = macos ] && [ "$ARCH" = aarch64 ]; then
+  for src in "$HERE/ape-loader-macos-arm64" "$HERE/loaders/ape-loader-macos-arm64"; do
+    [ -f "$src" ] || continue
+    if [ ! -x "$APELDR" ] || ! cmp -s "$src" "$APELDR"; then
+      mkdir -p "$(dirname "$APELDR")" 2>/dev/null || true
+      cp -f "$src" "$APELDR" && chmod +x "$APELDR" 2>/dev/null
+    fi
+    break
+  done
+fi
+
 if [ ! -x "$RUN" ]; then
   cp -f "$MASTER" "$RUN.tmp" && chmod +x "$RUN.tmp" || exit 1
 
@@ -127,19 +144,6 @@ if [ ! -x "$RUN" ]; then
   #                  (ape-loader-macos-arm64 → ~/.ape-1.10) 走 loader 形态
   #   Linux      : --assimilate 无效 (产物坏 ELF); 工具 / binfmt / loader 形态
   ok=0
-  APELDR="$HOME/.ape-1.10"
-
-  # 0) mac arm64 且缺 loader 缓存: 用发行件预编译 loader (免 cc / xcode CLT)
-  if [ "$OS" = macos ] && [ "$ARCH" = aarch64 ]; then
-    for src in "$HERE/ape-loader-macos-arm64" "$HERE/loaders/ape-loader-macos-arm64"; do
-      [ -f "$src" ] || continue
-      if [ ! -x "$APELDR" ] || ! cmp -s "$src" "$APELDR"; then
-        mkdir -p "$(dirname "$APELDR")" 2>/dev/null || true
-        cp -f "$src" "$APELDR" && chmod +x "$APELDR" 2>/dev/null
-      fi
-      break
-    done
-  fi
 
   # 1) 外部 assimilate 工具 (完整包) → 原生 ELF/Mach-O
   AS=""
