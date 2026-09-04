@@ -43,14 +43,21 @@
      } else if (!strcmp(path + 5, "stdout")) {
 --- a/libc/calls/getprogramexecutablename.greg.c
 +++ b/libc/calls/getprogramexecutablename.greg.c
-@@ -147,6 +147,27 @@
+@@ -145,6 +145,40 @@
+   if (IsMetal()) {
+     __program_executable_name = APE_COM_NAME;
      return;
-   }
- 
++  }
++
 +  if (IsXnu()) {
 +    /* mac: 无 GetModuleFileName//proc。KERN_PROCARGS2 sysctl 的 argv 区
 +     * 首串为 exec 绝对路径(不依赖 argv[0]/$_ 推断)。
-+     * mac 常量: CTL_KERN=1, KERN_PROCARGS2=49 (Apple 特有值)。 */
++     * mac 常量: CTL_KERN=1, KERN_PROCARGS2=49 (Apple 特有值)。
++     * 注: 经 ape loader (旧式 ~/.ape-1.10 或 /usr/bin/ape) 加载时,
++     * KERN_PROCARGS2 首串是 loader 路径而非程序路径 (exec 链首进程)。
++     * 检测 OldApeLoader 后回退 argv[0] (loader 保留其为程序路径),
++     * 与下方 Linux/BSD 分支同逻辑 — 2026-09-04 修复 (mac loader 形态
++     * STANDALONE 嵌套 exec 的 __program_executable_name 错误)。 */
 +    int mib[3] = {1, 49, getpid()};
 +    size_t need = 0;
 +    static char xnu_buf[1 << 18]; /* 启动早期无 malloc, 用静态缓冲 */
@@ -62,15 +69,22 @@
 +        size_t elen = strnlen(exe, need - sizeof(int));
 +        if (elen > 0 && elen + 1 <= sizeof(g_prog.u.buf)) {
 +          memcpy(g_prog.u.buf, exe, elen + 1);
++          if (OldApeLoader(g_prog.u.buf)) {
++            /* loader 路径: 回退 argv[0] (相对路径则拼 cwd) */
++            const char *q = __argv && __argv[0] ? __argv[0] : "";
++            if (CopyWithCwd(q, g_prog.u.buf,
++                            g_prog.u.buf + sizeof(g_prog.u.buf))) {
++              goto UseBuf;
++            }
++          }
 +          goto UseBuf;
 +        }
 +      }
 +    }
-+  }
-+
+   }
+ 
    // see if the loader passed us a path.
-   if (__program_executable_name) {
-     if (issetugid()) {
+
 --- a/libc/calls/ioctl.c
 +++ b/libc/calls/ioctl.c
 @@ -114,7 +114,7 @@

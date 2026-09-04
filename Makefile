@@ -40,17 +40,15 @@ build: x86_64 aarch64 fat
 package: build
 	scripts/package-release.sh
 
-smoke:
+smoke: package
 	@rm -rf .tmp/smoke && mkdir -p .tmp/smoke
-	@cp dist/release/release/busybox.com .tmp/smoke/ 2>/dev/null || cp dist/busybox-x86_64.ape .tmp/smoke/busybox.com
-	@cp tests/smoke.sh .tmp/smoke/
-	@cd .tmp/smoke && ./busybox.com sh smoke.sh
+	@cp -R dist/release/release/. .tmp/smoke/
+	@cd .tmp/smoke && BUSYBOX_COSMO_CACHE="$$PWD/cache" ./busybox sh smoke.sh
 
-smokefull:
+smokefull: package
 	@rm -rf .tmp/smokef && mkdir -p .tmp/smokef
-	@cp dist/release/release/busybox.com .tmp/smokef/ 2>/dev/null || cp dist/busybox-x86_64.ape .tmp/smokef/busybox.com
-	@cp tests/smoke-full.sh .tmp/smokef/
-	@cd .tmp/smokef && ./busybox.com sh smoke-full.sh
+	@cp -R dist/release/release/. .tmp/smokef/
+	@cd .tmp/smokef && BUSYBOX_COSMO_CACHE="$$PWD/cache" ./busybox sh smoke-full.sh
 
 toolchain-copy:
 	toolchain/provision.sh copy

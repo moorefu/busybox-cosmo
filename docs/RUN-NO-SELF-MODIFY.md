@@ -48,8 +48,10 @@ cache 键 = 平台-架构-母本 cksum:母本升级后自动生成新副本;旧�
    命令不可用。**要完整 shell 请用默认 cache 副本路径,或 Linux binfmt。**
 3. **mac arm64** 需 loader 参与 arm APE 首启(自举到 ~/.ape);安装器已携带
    `ape-loader-macos-arm64`,并以 cache 副本保证完整功能。
-4. **64KB 页 Linux aarch64**: 用 `busybox-arm64-linux-elf`(纯 ELF, 无同化问题),
-   安装器在 PAGESIZE=65536 时自动选择它。
+4. **64KB 页 Linux aarch64**: 首选 `busybox-arm64-linux-elf`(纯 ELF, 无同化问题,
+   免 loader; 安装器在 PAGESIZE=65536 时自动选它)。fat/arm64.ape 自 2026-09-04 起
+   **内嵌 64K 对齐 loader** (见 toolchain/build-custom.sh 3b' + check-ape-64k.sh),
+   经 `./busybox`(cache+assimilate)或 binfmt+loader 路径同样可用。
 5. Windows: 文件名必须含 `busybox`(busybox.exe/com) 才启用子命令模式。
 
 ## 三·五、"直接跑 busybox-fat.ape 就自动 cache" 能做到什么程度

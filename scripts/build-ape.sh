@@ -45,6 +45,24 @@ build_one() { # $1=arch
   echo "--- [$arch] apelink → dist/busybox-$arch.ape ---"
   "$TC_APELINK" $(apelink_embed_args "$arch") -o "$DIST_DIR/busybox-$arch.ape" "$tree/busybox_unstripped"
   echo "  -> $DIST_DIR/busybox-$arch.ape"
+  if [ "$arch" = aarch64 ]; then
+    check_64k "$DIST_DIR/busybox-aarch64.ape"
+  fi
+}
+
+
+check_64k() { # $1=file ; fat/aarch64 内嵌 loader 的 64K 页就绪自检
+  local f="$1"
+  [ -f "$f" ] || return 0
+  if [ -x "$ROOT/scripts/check-ape-64k.sh" ]; then
+    if "$ROOT/scripts/check-ape-64k.sh" "$f" >/tmp/bb-64k-check.log 2>&1; then
+      echo "  ✓ 64K 页就绪自检通过: $f"
+    else
+      echo "  ✗ 64K 页就绪自检失败: $f" >&2
+      cat /tmp/bb-64k-check.log >&2
+      return 1
+    fi
+  fi
 }
 
 case "$TARGET" in
@@ -55,6 +73,7 @@ case "$TARGET" in
     echo "--- [fat] 合成双架构 (基于两架构 unstripped ELF) ---"
     "$TC_APELINK" -l "$APE_LDR_X86" -l "$APE_LDR_A64" -M "$APE_M1_SRC" -o "$DIST_DIR/busybox-fat.ape" "$TREE_X86/busybox_unstripped" "$TREE_A64/busybox_unstripped"
     echo "  -> $DIST_DIR/busybox-fat.ape"
+    check_64k "$DIST_DIR/busybox-fat.ape" || die "fat 64K 自检失败"
     ;;
   all)
     build_one x86_64
@@ -62,6 +81,7 @@ case "$TARGET" in
     echo "--- [fat] 合成双架构 ---"
     "$TC_APELINK" -l "$APE_LDR_X86" -l "$APE_LDR_A64" -M "$APE_M1_SRC" -o "$DIST_DIR/busybox-fat.ape" "$TREE_X86/busybox_unstripped" "$TREE_A64/busybox_unstripped"
     echo "  -> $DIST_DIR/busybox-fat.ape"
+    check_64k "$DIST_DIR/busybox-fat.ape" || die "fat 64K 自检失败"
     ;;
   *) die "未知目标: $TARGET (x86_64|aarch64|fat|all)" ;;
 esac

@@ -34,9 +34,9 @@ case "$MODE" in
       echo "[provision] 工具链已就绪: $DEST (FORCE=1 可重拷)"
       exit 0
     fi
-    echo "[provision] 拷贝 $SRC → $DEST (APFS clonefile 秒级)..."
+    echo "[provision] 拷贝 $SRC → $DEST ..."
     rm -rf "$DEST"; mkdir -p "$DEST"
-    cp -c -R "$SRC/." "$DEST/"
+    cp -R "$SRC/." "$DEST/"
     echo "[provision] 完成 ($(du -sh "$DEST" | cut -f1))"
     ;;
   build)

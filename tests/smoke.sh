@@ -3,6 +3,7 @@
 # 每项测试验证输出正确性(而非仅退出码), 输出 PASS/FAIL 汇总
 PASS=0
 FAIL=0
+SKIP=0
 
 t() {
 	desc="$1"
@@ -14,6 +15,12 @@ t() {
 		echo "FAIL: $desc"
 		FAIL=$((FAIL + 1))
 	fi
+}
+
+s() {
+	desc="$1"
+	echo "SKIP: $desc"
+	SKIP=$((SKIP + 1))
 }
 
 echo "===== busybox APE smoke test ====="
@@ -79,8 +86,16 @@ t "/dev/zero" sh -c 'dd if=/dev/zero bs=4 count=1 2>/dev/null | wc -c | grep -q 
 t "/dev/urandom" sh -c 'dd if=/dev/urandom bs=8 count=1 2>/dev/null | wc -c | grep -q 8'
 
 # --- 路径/大小写 ---
-t "[win] cd 系统目录 /c/Windows" sh -c 'cd /c/Windows && pwd | grep -qi windows'
-t "[win] 文件系统大小写不敏感" sh -c 'ls /C/WINDOWS >/dev/null 2>&1; echo case-ok'
+case "$(uname -s 2>/dev/null)" in
+	*indows*|MINGW*|MSYS*|CYGWIN*)
+		t "[win] cd 系统目录 /c/Windows" sh -c 'cd /c/Windows && pwd | grep -qi windows'
+		t "[win] 文件系统大小写不敏感" sh -c 'ls /C/WINDOWS >/dev/null 2>&1 && echo case-ok'
+		;;
+	*)
+		s "[win] cd 系统目录 /c/Windows"
+		s "[win] 文件系统大小写不敏感"
+		;;
+esac
 
-echo "===== 结果: $PASS passed, $FAIL failed ====="
-exit 0
+echo "===== 结果: $PASS passed, $FAIL failed, $SKIP skipped ====="
+[ "$FAIL" -eq 0 ]

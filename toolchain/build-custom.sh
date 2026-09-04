@@ -101,13 +101,20 @@ build_one() { # $1=arch(x86_64|aarch64)
 
   case "$arch" in
     x86_64)
-      # 已验工具链 x86_64: 替换 libcosmo.a/crt.o + 新增 crtfastmath.o + ape 全套(ape.lds/ape.o/copy-self/no-modify-self)
+      # 已验工具链 x86_64: 替换 libcosmo.a/crt.o + 新增 crtfastmath.o + ape 全套
+      # + tool/build/apelink (重建: 官方 zip 的 apelink 未含 64K 补丁!
+      #   2026-09-04 qemu 真 64K 内核实测: 官方 apelink 把 aarch64 载荷放 0x4000
+      #   (16K 对齐), loader 按 AT_PAGESZ=64K 校验不同余拒绝 → 必须用 master 重建版,
+      #   载荷落到 64K 对齐)
       targets=( cosmopolitan.a libc/crt/crt.o libc/crt/crtfastmath.o \
-                ape/ape.lds ape/ape.o ape/ape-copy-self.o ape/ape-no-modify-self.o )
+                ape/ape.lds ape/ape.o ape/ape-copy-self.o ape/ape-no-modify-self.o \
+                tool/build/apelink )
       ;;
     aarch64)
-      # 已验工具链仅替换 aarch64 的 libcosmo.a + crt.o (aarch64.lds 与官方一致, 不动)
-      targets=( cosmopolitan.a libc/crt/crt.o )
+      # 已验工具链替换 aarch64 的 libcosmo.a + crt.o; 并重建 ape loader
+      # (o/aarch64/ape/ape.elf) — ape/BUILD.mk 定制 max-page-size=0x10000,
+      # 否则官方 16K loader 在 64K 页内核上不可加载 (见 docs/DEPLOYMENT.md FAQ)。
+      targets=( cosmopolitan.a libc/crt/crt.o ape/ape.elf )
       ;;
   esac
 
@@ -115,8 +122,13 @@ build_one() { # $1=arch(x86_64|aarch64)
   # 头清单 o/cosmocc.h.txt 与 mode 无关 (package.sh 规则里两种 mode 都建它)
   objs+=( "o/cosmocc.h.txt" )
 
-  if [ -f "$SRC_DIR/o/$arch/cosmopolitan.a" ] && [ "${FORCE:-0}" != "1" ]; then
-    log "$arch cosmopolitan.a 已存在, 跳过 (FORCE=1 重建)"
+  # 增量: 仅当全部目标产物齐备才可跳过 (FORCE=1 强制重建)
+  local all_exist=1
+  for t in "${targets[@]}"; do
+    [ -f "$SRC_DIR/o/$arch/$t" ] || { all_exist=0; break; }
+  done
+  if [ "$all_exist" = "1" ] && [ "${FORCE:-0}" != "1" ]; then
+    log "$arch 产物齐备, 跳过 (FORCE=1 重建)"
     return
   fi
 
@@ -137,7 +149,7 @@ build_one() { # $1=arch(x86_64|aarch64)
 assemble() {
   log "组装 toolchain/cosmo ← 官方基座 + master 产物 + master 头"
   rm -rf "$STAGE"
-  ( cd "$ROOT/work" && cp -c -R cosmocc-base "$STAGE" )   # clonefile 秒级
+  ( cd "$ROOT/work" && cp -R cosmocc-base "$STAGE" )
 
   # 3a. 替换 x86_64 部件
   local X="$STAGE/x86_64-linux-cosmo/lib"
@@ -153,6 +165,27 @@ assemble() {
   local A="$STAGE/aarch64-linux-cosmo/lib"
   cp -f "$SRC_DIR/o/aarch64/cosmopolitan.a"       "$A/libcosmo.a"
   cp -f "$SRC_DIR/o/aarch64/libc/crt/crt.o"       "$A/crt.o"
+
+  # 3b'. aarch64 ape loader ELF → bin/ (apelink -l 嵌入用)
+  #      官方 zip 里的 ape-aarch64.elf 是 16K 页对齐 (phdr Align 0x4000),
+  #      64K 页内核 (鲲鹏 UOS/麒麟) 上不可加载 → 必须用 master 重建的 64K 版
+  #      (o/aarch64/ape/ape.elf, 链接于 ape/BUILD.mk APE_LOADER_LDFLAGS
+  #       max-page-size=0x10000; 见 patches/cosmo/cosmo-custom-full.patch)。
+  #      x86_64 官方 loader 本身已是 0x10000 对齐且实测通过 → 保持基座版不动。
+  #      发布件 assets/loaders/ape-loader-aarch64 同源 (逐字节一致)。
+  cp -f "$SRC_DIR/o/aarch64/ape/ape.elf"         "$STAGE/bin/ape-aarch64.elf"
+  chmod 755 "$STAGE/bin/ape-aarch64.elf"
+  log "  bin/ape-aarch64.elf ← master 重建 (64K 页兼容 loader)"
+
+  # 3b''. apelink → bin/ (fat/ape 组装工具)
+  #      官方 zip 的 apelink 未含 64K 补丁 (tool/build/apelink.c ThirdPass
+  #      pagesz=65536 只改了源码) — 2026-09-04 qemu 真 64K 内核实测: 官方版把
+  #      aarch64 载荷放 0x4000 (16K 对齐), loader 按 AT_PAGESZ=64K 拒绝
+  #      ("p_vaddr incongruent w/ p_offset")。master 重建版载荷落到 0x10000,
+  #      64K 内核直接 exec 通过。必须替换!
+  cp -f "$SRC_DIR/o/x86_64/tool/build/apelink"   "$STAGE/bin/apelink"
+  chmod 755 "$STAGE/bin/apelink"
+  log "  bin/apelink ← master 重建 (64K 页兼容 apelink)"
 
   # 3c. include/ 整体替换为 master 头 (package.sh 规则)
   log "安装 master 头 → include/ (o/cosmocc.h.txt 规则)"
@@ -196,7 +229,7 @@ PY
   # 3e. 落盘
   log "落盘 → $OUT_TC"
   rm -rf "$OUT_TC"
-  ( cd "$ROOT/work" && cp -c -R cosmo-stage "$OUT_TC" )
+  ( cd "$ROOT/work" && cp -R cosmo-stage "$OUT_TC" )
   rm -rf "$STAGE"
   log "工具链完成: $OUT_TC ($(du -sh "$OUT_TC" | cut -f1))"
 }
@@ -208,6 +241,28 @@ verify() {
   log "  对象(.a/.o): 比对 strip-debug 后代码节 (DWARF 含构建路径, 逐字节不可比)"
   log "  文本/脚本/头: 逐字节比对"
   local ok=1
+
+  # 3f'. aarch64 ape loader 64K 对齐校验 (与 64K 页内核部署强相关, 防回归成官方 16K 版)
+  log "校验 bin/ape-aarch64.elf: LOAD Align ≥ 0x10000 且 vaddr≡offset (mod 64K)"
+  local lf="$OUT_TC/bin/ape-aarch64.elf"
+  if [ -f "$lf" ]; then
+    local rd="$OUT_TC/bin/aarch64-linux-cosmo-readelf"
+    local bad=0
+    # readelf -l 每个 LOAD 占两行: 首行 $2=off $3=vaddr; 续行末字段=Align
+    while read -r loff lvaddr al; do
+      case "$al" in
+        0x10000|0x20000|0x40000|0x80000|0x100000) ;;  # 64K 倍数 OK
+        *) log "  ✗ ape-aarch64.elf LOAD Align=$al (< 0x10000, 64K 内核不可加载)"; bad=1 ;;
+      esac
+      # 同余: (vaddr - offset) mod 0x10000 == 0 (bash 不支持 16#0x.., 先去前缀)
+      if [ $(( (16#${lvaddr#0x} - 16#${loff#0x}) % 65536 )) != 0 ]; then
+        log "  ✗ ape-aarch64.elf LOAD off=$loff vaddr=$lvaddr 不同余 64K"; bad=1
+      fi
+    done < <("$rd" -l "$lf" 2>/dev/null | awk '/^  LOAD/{off=$2; va=$3; getline; print off, va, $NF}')
+    [ "$bad" = 0 ] && log "  ✓ ape-aarch64.elf LOAD Align ≥ 0x10000 且同余 64K (64K 页可用)"
+  else
+    log "  ✗ 缺 $lf"; ok=0
+  fi
 
   # 对象类 — 剥调试信息后比代码节
   local tmpdir="/tmp/bb-verify-$$"
@@ -282,7 +337,7 @@ PY
     else log "  ✗ bin/cosmocross 与基座变换不符"; ok=0; fi
   fi
 
-  rm -rf "$tmpdir"
+  # 3f'. aarch64 ape loader 64K 对齐校验 — 见 verify() 开头
   if [ $ok = 1 ]; then log "=== 校验通过: 与已验证 .cosmocc/3.9.2 代码/内容一致 ==="
   else die "存在差异, 请人工核对"; fi
 }
@@ -293,7 +348,8 @@ case "$MODE_MAIN" in
   x86_64|aarch64) prep_base; prep_src; ( cd "$SRC_DIR" && build_one "$MODE_MAIN" ) ;;
   all)            prep_base; prep_src
                   ( cd "$SRC_DIR" && build_one x86_64 )
-                  ( cd "$SRC_DIR" && build_one aarch64 ) ;;
+                  ( cd "$SRC_DIR" && build_one aarch64 )
+                  assemble ;;
   assemble)       [ -d "$SRC_DIR/o/x86_64" ] || die "缺源码构建产物, 先跑 build-custom.sh all"
                   [ -d "$TC_BASE" ] || prep_base; assemble ;;
   verify)         verify ;;

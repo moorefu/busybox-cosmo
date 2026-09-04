@@ -66,4 +66,4 @@ t "ed 脚本化编辑" sh -c 'printf "a\\nhello-ed\\n.\\nw ed.txt\\nq\\n" | ed >
 t "vi 二进制存在" sh -c 'vi --help 2>&1 | grep -qi usage'
 
 echo "===== 结果: $PASS passed, $FAIL failed ====="
-exit 0
+[ "$FAIL" -eq 0 ]

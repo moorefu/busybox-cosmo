@@ -8,10 +8,12 @@
 | `mkfifo` / `mknod` | cosmo 未实现 mknodat wrapper (Linux/mac 均 ENOSYS) | cosmo 上游缺口 |
 | `sethostname`(hostname 写) | 已由工程补丁实现三平台等价物; mac/win 需 root/管理员 (非 root 得 EPERM, 读不受限) | cosmo-sethostname-extra.patch |
 | `nproc` | cosmo 未实现 sched_getaffinity | cosmo 上游缺口 |
-| 64KB 页 Linux aarch64 | 需用 `busybox-arm64-linux-elf` 或 64K loader + binfmt `FP`; 普通 APE 同化路径不可用 | 需 loader |
-| mac Apple Silicon 原生 arm64 | 顶层命令可用; ash 嵌套 exec 受限 (APE 前缀 argv 语义) | cosmo 上游级 |
+| 64KB 页 Linux aarch64 | 三环修复: ①loader 64K 对齐 (master 重建 ape-aarch64.elf) ②apelink 二进制重建 (官方 zip 未含补丁, 载荷曾放 0x4000 被 64K loader 拒) ③fat 内嵌 loader。另有 `busybox-arm64-linux-elf` 免 loader 直跑。qemu 真 64K 内核 (generic-64k) 实测: ELF/fat/单架构直接 exec 全 OK | ✅ 2026-09-04 (qemu 真 64K 内核模拟) |
+| APE 内置 `--assimilate` 仅 mac 有效 | Linux 上产物坏 ELF (cosmopolitan 布局局限: 只 printf ELF 头不重定位 phdr); Linux 转原生须外部 `assimilate` 工具或 binfmt (qemu 实测 2026-09-04) | cosmo 上游级, 已文档化 |
+| Linux loader 形态嵌套 exec 受限 | 无 binfmt 时直接 exec APE 走内嵌 loader; 顶层命令可用, ash 嵌套 exec 受限 (qemu arm64/x86 实测 smoke 1/46) | 需 binfmt/ELF/工具 |
+| mac Apple Silicon 原生 arm64 | 顶层可用 (bb.sh 用 loader '-' 模式免 cc); 嵌套 exec 受限 (cosmo 上游: APE 无 Mach-O arm64 布局, loader 转发不完整); **全功能走 Rosetta**: `arch -x86_64 ./busybox` | 待真机 (APPLE-SILICON-TEST.md) |
 | Windows fork | CreateProcess+全内存复制, 较慢; cosmo issue #1174 (accept 场景 socket 继承) 部分未根治 | connect 实测无碍 |
-| fat.ape 在 4K/16K 页 aarch64 实机 | 本机 (mac x86_64) 只能验证合成, 无法实测两架构同机 | 待真机 |
+| fat.ape 在 4K/16K 页 aarch64 真机 | qemu-system-aarch64 全系统 (4K 与 64K 内核) 已实测直接 exec + 嵌套 exec; 真机 (鲲鹏 UOS 4K/16K) 仍建议最终冒烟 | 模拟已覆盖, 真机待补 |
 | QuickEdit 鼠标补丁 | tcsetattr 定制已打入工具链 | 需 Windows 最终确认 |
 | APE 同化 | 首跑改写自身为平台格式; 分发必须 zip 母本 | 设计使然, 测试纪律 |
 | `zcat` | busybox 本义为 .Z 解压器; 解 gzip 用 `gzip -dc` | 用法说明 |

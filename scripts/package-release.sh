@@ -23,34 +23,47 @@ MIN_OUT="$DIST_DIR/min"
 if [ "$MODE" = "--min" ]; then
   echo "=== 生成最小发布包 dist/busybox-min.zip ==="
   rm -rf "$MIN_OUT" && mkdir -p "$MIN_OUT"
-  # fat 单文件(含 x86_64+aarch64 载荷, 内嵌 loader) → 命名 busybox.com: Windows 直跑, mac/linux 由 busybox 脚本跑
+  # fat 单文件(含 x86_64+aarch64 载荷 + 64K 对齐内嵌 loader) → 命名 busybox.com
   "$TC_APELINK" -l "$APE_LDR_X86" -l "$APE_LDR_A64" -M "$APE_M1_SRC" \
     -o "$MIN_OUT/busybox.com" "$TREE_X86/busybox_unstripped" "$TREE_A64/busybox_unstripped"
   chmod 755 "$MIN_OUT/busybox.com"
+  "$ROOT/scripts/check-ape-64k.sh" "$MIN_OUT/busybox.com" >/dev/null || die "min busybox.com 64K 自检失败 (内嵌 loader 非 64K 对齐?)"
   cp "$ROOT/scripts/bb.sh" "$MIN_OUT/busybox" && chmod 755 "$MIN_OUT/busybox"
-  cp "$LOADERS/assimilate" "$MIN_OUT/assimilate" && chmod 755 "$MIN_OUT/assimilate"
-  cp "$ROOT/tests/smoke-full.sh" "$MIN_OUT/smoke-full.sh"
+  cp "$LOADERS/ape-loader-aarch64" "$LOADERS/ape-loader-x86_64" "$MIN_OUT/" 2>/dev/null || true
+  # mac loader (Apple Silicon 真机免 cc 自举用; x86_64 mac 走内置 --assimilate)
+  cp "$LOADERS/ape-loader-macos-arm64" "$LOADERS/ape-loader-macos-x86_64" "$MIN_OUT/" 2>/dev/null || true
   cat > "$MIN_OUT/README.txt" <<'EOF'
 busybox-cosmo 最小发布包 (fat 单文件)
 
 文件:
-  busybox.com   fat APE (x86_64 + aarch64, 内嵌 loader)
-                Windows: 直跑(须含 busybox 名), 覆盖 x86_64; ARM 版 Windows 不支持
-                mac/Linux: 交给同目录 busybox 脚本运行(自动生成原生副本)
-  busybox       零安装 launcher: 首跑 cp busybox.com→cache 并用 assimilate 转原生
-                (mac=Mach-O / Linux=ELF), 之后运行原生副本(全功能 shell); 母本从不改
-  assimilate    原生转换工具(launcher 依赖)
-  smoke-full.sh 完整回归 (busybox sh smoke-full.sh)
+  busybox.com      fat APE (x86_64 + aarch64 载荷, 内嵌 64K 对齐 loader)
+                   Windows: 直跑 (文件名须含 busybox; 覆盖 x86_64)
+                   mac/Linux: 由同目录 busybox 脚本运行
+  busybox          零安装 launcher (内含 Linux binfmt 部署子命令)
+                   mac x86_64: fat 内置 --assimilate 自同化 → Mach-O (免外部工具)
+                   mac arm64 : 自动把 ape-loader-macos-arm64 放 ~/.ape-1.10 免 cc;
+                               完整 shell 需完整包的 assimilate 工具
+                   Linux: 无 binfmt 时退 loader 形态 (顶层命令可用)
+  ape-loader-*     --setup-linux 用 (aarch64/x86_64) + mac 免 cc (macos-arm64/x86_64)
+  README.txt       本说明
 
 用法:
-  mac/Linux : ./busybox <args>          (或 ./busybox sh smoke-full.sh)
-  Windows   : busybox.com <args>        (子命令模式; 建议 Windows Terminal)
+  Windows   : busybox.com <args>
+  mac/Linux : ./busybox <args>              (零安装; mac x86_64 自动全功能)
+  mac arm64 : ./busybox <args> 顶层可用; 完整 shell 用完整包或 Rosetta 跑 x86_64
+  Linux 全功能: sudo ./busybox --setup-linux 一次
+                   (装 /usr/bin/ape + 注册 binfmt FP; 之后直接 exec
+                    busybox.com 即全功能 shell, 64K 页内核同样可用)
+  64K 页 Linux aarch64 (鲲鹏/UOS): 同上 --setup-linux (loader 已 64K 对齐)
+  验证注册: ./busybox --setup-linux (非 root 会提示用 sudo)
 
 cache: $BUSYBOX_COSMO_CACHE → $XDG_CACHE_HOME/busybox-cosmo → ~/.cache/busybox-cosmo
-说明/局限: 见完整包 RUN-NO-SELF-MODIFY.md; 64K 页 Linux aarch64(鲲鹏/UOS)请用完整包的
-busybox-arm64-linux-elf。loader 形态直跑(不经 busybox)时 ash 嵌套 exec 受限。
+局限: 见完整包 RUN-NO-SELF-MODIFY.md。loader 形态 (无 binfmt Linux / mac arm64)
+嵌套 exec 受限; 完整 shell: mac x86_64 自同化, Linux --setup-linux, mac arm64 用完整包。
 EOF
-  ( cd "$MIN_OUT" && zip -q "$DIST_DIR/busybox-min.zip" busybox.com busybox assimilate smoke-full.sh README.txt )
+  ( cd "$MIN_OUT" && zip -q "$DIST_DIR/busybox-min.zip" busybox.com busybox \
+      ape-loader-aarch64 ape-loader-x86_64 \
+      ape-loader-macos-arm64 ape-loader-macos-x86_64 README.txt )
   echo "最小包完成: $DIST_DIR/busybox-min.zip"
   ls -la "$MIN_OUT"
   exit 0
@@ -71,6 +84,7 @@ cp "$TREE_A64/busybox_unstripped" "$OUT/release/busybox-arm64-linux-elf"
 
 echo "=== 2. fat 双架构合成 ==="
 "$TC_APELINK" -l "$APE_LDR_X86" -l "$APE_LDR_A64" -M "$APE_M1_SRC" -o "$OUT/release/busybox-fat.ape" "$TREE_X86/busybox_unstripped" "$TREE_A64/busybox_unstripped"
+"$ROOT/scripts/check-ape-64k.sh" "$OUT/release/busybox-fat.ape" >/dev/null || die "fat 64K 自检失败 (内嵌 loader 非 64K 对齐?)"
 
 echo "=== 3. ape loader (64K 页 / 无 binfmt 场景) ==="
 if [ -d "$LOADERS" ]; then
