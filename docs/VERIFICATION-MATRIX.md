@@ -186,7 +186,22 @@ busybox `get_busybox_exec_path()` realpath(argv[0]) 必败、回落
 | loader 形态 deep-test | ✅ 31/31 (修复前 28/31) |
 | loader 形态 smoke-full | ✅ 173 PASS / 0 FAIL (修复前 7 FAIL) |
 | bb.sh 同化原生路径回归 | ✅ 31/31 + 173/0 (无回归) |
-| macOS ARM64 CI (macos-15 arm64 真机) | 推送后复验 (本行随 CI 更新) |
+
+**第 3 层根因 (bb.sh 复用 cache 时 LDR 回退)** — 前两层修复后 arm64 真机出现
+"deep 31/31 → smoke 0/124" 顺序崩坏 (探针: 单跑 smoke-alone 174/0, 但随后任何
+新进程全崩; 同文件直接 loader OK)。实测定案: bb.sh 把 `~/.ape-1.10` 预置
+(APELDR + 拷贝发行 loader) 放在 cache RUN 的**创建分支**内; 二次调用复用 RUN
+时 APELDR 为空 → 执行分支 LDR 回退到发行件原名 `release/ape-loader-macos-arm64`
+(basename 不匹配 cosmo OldApeLoader 检测 `.ape-NNN` / `/usr/bin/ape`) → 载荷
+GetProgramExecutableName 把 loader 路径当自身 exec 路径 → STANDALONE 嵌套 exec
+直接 exec loader 二进制 → argv 错位 `ape error: -qE/-E: not found`。
+
+| 验证 | 结果 |
+|---|---|
+| arm64 真机判别: 同一 RUN 直接 loader (~/.ape-1.10) vs bb.sh 复用 (发行名) | ✅ 前者 OK / 后者崩 (吻合根因) |
+| 修复: bb.sh loader 预置移出创建分支, 每次调用校验/重装 ~/.ape-1.10 | — |
+| macOS ARM64 CI (macos-15 arm64 真机, ade6aaa) | ✅ deep-test 31/31 + smoke-full 174 PASS / 0 FAIL |
+| 全平台 CI (同 run) | ✅ 7 job 全 success (Linux x86/arm64, macOS x86/arm64, Windows x86/arm64) |
 
 ## 四、重建 vs 历史基线的差异说明
 
