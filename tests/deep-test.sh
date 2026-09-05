@@ -4,6 +4,19 @@
 # 覆盖: awk/sed 深度、长管道、大文件、并发 fork 压力
 PASS=0
 FAIL=0
+SKIP=0
+
+TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/busybox-deep.XXXXXX")" || exit 2
+KEEP_TEST_ROOT="${KEEP_TEST_ROOT:-0}"
+cleanup_deep() {
+	if [ "$KEEP_TEST_ROOT" = 1 ]; then
+		echo "测试临时目录已保留: $TEST_ROOT" >&2
+	else
+		rm -rf "$TEST_ROOT"
+	fi
+}
+trap cleanup_deep EXIT HUP INT TERM
+cd "$TEST_ROOT" || exit 2
 
 t() {
 	desc="$1"
@@ -54,7 +67,12 @@ t "10 个后台进程" sh -c 'i=1; while [ $i -le 10 ]; do (sleep 0.1; echo bg-$
 t "50 次 fork 循环" sh -c 'i=1; while [ $i -le 50 ]; do sh -c "exit 0" || exit 1; i=$((i+1)); done; echo fork50-ok'
 t "嵌套子 shell 3 层" sh -c 'x=$(echo $(echo $(echo deep))) && test "$x" = deep'
 t "并发生产者" sh -c '(yes p1 | head -2000 > cp1.txt) & (yes p2 | head -2000 > cp2.txt) & wait; cat cp1.txt cp2.txt | sort | uniq -c | wc -l | grep -q 2 && rm -f cp1.txt cp2.txt'
-t "进程替换式 fd" sh -c 'cat <(echo procsub) 2>/dev/null | grep -q procsub || echo no-procsub'
+if sh -c 'cat <(echo procsub) 2>/dev/null | grep -q procsub' >/dev/null 2>&1; then
+	t "进程替换式 fd" sh -c 'cat <(echo procsub) 2>/dev/null | grep -q procsub'
+else
+	echo "SKIP: 进程替换式 fd (当前 shell 不支持 process substitution)"
+	SKIP=$((SKIP + 1))
+fi
 
 # --- 文本大输入 ---
 t "grep 万行" sh -c 'seq 1 10000 | grep -c 999 | grep -q 19'
@@ -65,5 +83,5 @@ t "wc 大输入" sh -c 'yes word | head -100000 | wc -w | grep -q 100000'
 t "ed 脚本化编辑" sh -c 'printf "a\\nhello-ed\\n.\\nw ed.txt\\nq\\n" | ed >/dev/null 2>&1 && grep -q hello-ed ed.txt && rm -f ed.txt'
 t "vi 二进制存在" sh -c 'vi --help 2>&1 | grep -qi usage'
 
-echo "===== 结果: $PASS passed, $FAIL failed ====="
+echo "===== 结果: $PASS passed, $FAIL failed, $SKIP skipped ====="
 [ "$FAIL" -eq 0 ]

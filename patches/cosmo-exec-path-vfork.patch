@@ -44,13 +44,10 @@
  int scripted_main(int argc UNUSED_PARAM, char **argv) MAIN_EXTERNALLY_VISIBLE;
  int scripted_main(int argc UNUSED_PARAM, char **argv)
  {
-@@ -1011,6 +1014,9 @@
+@@ -1011,6 +1014,6 @@
  
  # if NUM_SCRIPTS > 0
  /* if SINGLE_APPLET_MAIN, these two functions are simpler: */
-+#if defined(__COSMOPOLITAN__)
-+const char *bb_argv0;
-+#endif
  int scripted_main(int argc UNUSED_PARAM, char **argv) MAIN_EXTERNALLY_VISIBLE;
  int scripted_main(int argc UNUSED_PARAM, char **argv)
  {

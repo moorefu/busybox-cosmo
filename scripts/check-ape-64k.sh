@@ -14,16 +14,22 @@
 #
 # 输出: 列出内嵌各架构 loader 的 LOAD 对齐, 校验 64K 同余; 退出码 0=就绪
 # ============================================================
-set -u
+set -euo pipefail
 
 FILE="${1:-}"
 [ -n "$FILE" ] && [ -f "$FILE" ] || { echo "用法: $0 <file.ape> [toolchain/bin 目录]" >&2; exit 2; }
 BIN="${2:-$(cd "$(dirname "$0")/.." && pwd)/toolchain/cosmo/bin}"
 
 # 解出内嵌 gzip loader → stdout: "<arch> <tmp-elf> <size>"
+TMPDIR_CHECK="$(mktemp -d "${TMPDIR:-/tmp}/ape64k.XXXXXX")"
+trap 'rm -rf "$TMPDIR_CHECK"' EXIT HUP INT TERM
+
+command -v python3 >/dev/null 2>&1 || { echo "缺少 python3，无法解析 APE" >&2; exit 1; }
+
 extract_loaders() { # $1=file
-  python3 - "$1" <<'PY'
+  TMPDIR_CHECK="$TMPDIR_CHECK" python3 - "$1" <<'PY'
 import struct, sys, zlib
+import os
 d = open(sys.argv[1], 'rb').read()
 seen = set()
 for i in range(len(d) - 4):
@@ -46,19 +52,20 @@ for i in range(len(d) - 4):
         if arch in seen:
             continue
         seen.add(arch)
-        out = '/tmp/ape64k-%s-%d.elf' % (arch, len(d))
+        out = os.path.join(os.environ['TMPDIR_CHECK'], 'loader-%s.elf' % arch)
         open(out, 'wb').write(full)
         print(arch, out, len(full))
     except Exception:
-        pass
+        # APE 中可能还有普通 gzip 数据；只有识别为 ELF 的流才是 loader。
+        continue
 PY
 }
 
 fail=0
 
 check_arch() { # $1=arch  $2=elf  $3=rd
-  [ -x "$3" ] || { echo "  (缺 $3, 跳过架构级 phdr 校验)"; return 0; }
-  "$3" -l "$2" 2>/dev/null | awk '/^  LOAD/{off=$2; va=$3; getline; print off, va, $NF}' > /tmp/ape64k-phdr.$$
+  [ -x "$3" ] || { echo "  ✗ [$1] 缺少 readelf: $3"; fail=1; return; }
+  "$3" -l "$2" 2>/dev/null | awk '/^[[:space:]]*LOAD[[:space:]]/{off=$2; va=$3; getline; print off, va, $NF}' > "$TMPDIR_CHECK/phdr-$1"
   local n=0
   while read -r off va al; do
     [ -n "$al" ] || continue
@@ -76,12 +83,15 @@ check_arch() { # $1=arch  $2=elf  $3=rd
     elif [ "$okalign" = 1 ]; then
       echo "  ✓ [$1] LOAD$n Align=$al 且 off≡vaddr (mod 64K)"
     fi
-  done < /tmp/ape64k-phdr.$$
-  rm -f /tmp/ape64k-phdr.$$
+  done < "$TMPDIR_CHECK/phdr-$1"
+  if [ "$n" -eq 0 ]; then
+    echo "  ✗ [$1] 未找到 PT_LOAD，拒绝通过"
+    fail=1
+  fi
 }
 
 echo "== 检查 $FILE (64K 页内核就绪性) =="
-TMPL="$(mktemp /tmp/ape64k-list.XXXXXX)"
+TMPL="$TMPDIR_CHECK/loaders.list"
 extract_loaders "$FILE" > "$TMPL"
 found=0
 while read -r arch elfpath size; do
@@ -93,11 +103,9 @@ while read -r arch elfpath size; do
   esac
   echo "-- 内嵌 $arch loader ($size B)"
   check_arch "$arch" "$elfpath" "$rd"
-  rm -f "$elfpath"
 done < "$TMPL"
-rm -f "$TMPL"
 if [ "$found" = 0 ]; then
-  echo "(未发现内嵌 gzip loader — 或非内嵌 loader 形态产物)"
-  exit 0
+  echo "✗ 未发现内嵌 gzip ELF loader，无法证明 64K 就绪" >&2
+  exit 1
 fi
 [ "$fail" = 0 ] && echo "== ✓ 64K 页内核就绪 ==" || { echo "== ✗ 存在 64K 不兼容 =="; exit 1; }

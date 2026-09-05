@@ -17,6 +17,12 @@ esac
 # 0. 前置检查
 [ -f "$BB_FULL_PATCH" ] || die "缺完整补丁: $BB_FULL_PATCH (先整理 patches/)"
 [ -f "$CONFIG_DIR/busybox-$BB_VER.config" ] || die "缺配置: config/busybox-$BB_VER.config"
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else die "缺少 sha256sum/shasum，无法校验补丁"; fi
+}
+PATCH_SHA="$(sha256_file "$BB_FULL_PATCH")"
 
 # 1. 取原版源码
 scripts/fetch-busybox.sh
@@ -32,6 +38,7 @@ fi
 # 3. 打补丁 (幂等: 以 .bb-patch-ok 标志为准)
 #    注意: 不能用 `patch -R --dry-run` 探测"已打过"——GNU patch 在纯净树反向探测时会
 #    自动回答 "Ignore -R? [y]" 并返回 0, 造成误判跳过补丁 (2026-09-03 实测踩坑)。
+PATCH_MARK="patch_sha256=$PATCH_SHA"
 if [ ! -f "$TREE/.bb-patch-ok" ]; then
   if ( cd "$TREE" && patch -p1 --dry-run -s < "$BB_FULL_PATCH" >/dev/null 2>&1 ); then
     echo "[prepare] 打补丁 busybox-cosmo-full.patch ..."
@@ -41,10 +48,11 @@ if [ ! -f "$TREE/.bb-patch-ok" ]; then
   else
     die "补丁 forward dry-run 失败且树中无补丁痕迹, 请检查"
   fi
-  touch "$TREE/.bb-patch-ok"
+  printf '%s\n' "$PATCH_MARK" > "$TREE/.bb-patch-ok"
   echo "[prepare] 补丁完成"
 else
-  echo "[prepare] 补丁已应用, 跳过"
+  grep -qx "$PATCH_MARK" "$TREE/.bb-patch-ok" || die "补丁标志过期或为空，请使用新的工作树: $TREE"
+  echo "[prepare] 补丁已应用且指纹匹配, 跳过"
 fi
 
 # 3b. 增量补丁: 恢复部分被裁 applet (free/uptime/ar/uncompress/unlzop/lzopcat)
@@ -53,10 +61,14 @@ if [ -f "$BB_RESTORE_PATCH" ] && [ ! -f "$TREE/.bb-restore-ok" ]; then
   if ( cd "$TREE" && patch -p1 --dry-run -s < "$BB_RESTORE_PATCH" >/dev/null 2>&1 ); then
     echo "[prepare] 打增量补丁 $(basename "$BB_RESTORE_PATCH") ..."
     ( cd "$TREE" && patch -p1 -s < "$BB_RESTORE_PATCH" )
-    touch "$TREE/.bb-restore-ok"
+    printf 'patch_sha256=%s\n' "$(sha256_file "$BB_RESTORE_PATCH")" > "$TREE/.bb-restore-ok"
   else
     echo "[prepare] 增量补丁不可用(可能已含或版本不符), 跳过: $BB_RESTORE_PATCH"
   fi
+fi
+if [ -f "$TREE/.bb-restore-ok" ]; then
+  RESTORE_MARK="patch_sha256=$(sha256_file "$BB_RESTORE_PATCH")"
+  grep -qx "$RESTORE_MARK" "$TREE/.bb-restore-ok" || die "恢复补丁标志过期，请使用新的工作树: $TREE"
 fi
 
 # 4. 放配置; 新增源码带来的"新符号"(如 w32 移植 make → CONFIG_MAKE/PDPMAKE)

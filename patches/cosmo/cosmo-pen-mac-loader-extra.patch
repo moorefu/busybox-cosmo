@@ -25,7 +25,7 @@
 
 --- a/libc/calls/getprogramexecutablename.greg.c
 +++ b/libc/calls/getprogramexecutablename.greg.c
-@@ -168,10 +168,43 @@
+@@ -168,10 +168,47 @@
          if (elen > 0 && elen + 1 <= sizeof(g_prog.u.buf)) {
            memcpy(g_prog.u.buf, exe, elen + 1);
            if (OldApeLoader(g_prog.u.buf)) {
@@ -61,9 +61,13 @@
 +            {
 +              int f = 0;
 +              while (f < ai && !*av[f]) ++f;
-+              if (av[f + 1] && !strcmp(av[f + 1], "-") && av[f + 2])
++              /* 解析结果可能被截断或只包含 loader 路径，先检查边界再取
++               * f+1/f+2，避免异常 argv 导致越界读取。 */
++              if (f + 1 < ai && av[f + 1] &&
++                  !strcmp(av[f + 1], "-") &&
++                  f + 2 < ai && av[f + 2])
 +                q = av[f + 2];  /* loader - PROG ARGV0.. → PROG */
-+              else if (av[f + 1])
++              else if (f + 1 < ai && av[f + 1])
 +                q = av[f + 1];  /* loader PROG .. → PROG */
 +              else if (__argv && __argv[0])
 +                q = __argv[0];  /* 兜底: 载荷 argv[0] */

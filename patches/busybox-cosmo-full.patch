@@ -22,28 +22,33 @@
 
 --- a/archival/tar.c
 +++ b/archival/tar.c
-@@ -619,7 +619,20 @@
+@@ -619,7 +619,25 @@
  		// if xz is an enabled applet, it'll be a version which
  		// can only decompress. We do need to execute external
  		// program, not applet.
+-		execlp(gzip, gzip, "-f", (char *)0);
 +#if defined(__COSMOPOLITAN__)
-+		/* cosmo: PATH 中无 gzip 等外部程序(execlp 必失败,且 vfork 共享
-+		 * errno 模式在 cosmo 失效)。exec 自身 applet: busybox gzip/bzip2
-+		 * applet 支持压缩,功能等价。 */
++		/* cosmo: gzip/bzip2 applet 具备编码能力，可以自执行；xz/lzma
++		 * 在 BusyBox 中通常只有解码入口，必须调用 PATH 中的外部编码器。
++		 * 因此不能把所有名字都路由回自身，否则 tar cJf 会得到空/截断包。
++		 * 外部程序不存在或 PATH 指向错误的 BusyBox 别名时，exec 失败并由
++		 * 下方共享错误通道返回非零。 */
 +		{
 +			char *cargv[3];
 +			cargv[0] = (char*)gzip;
 +			cargv[1] = (char*)"-f";
 +			cargv[2] = NULL;
-+			execv(bb_busybox_exec_path, cargv);
++			if (!strcmp(gzip, "xz") || !strcmp(gzip, "lzma"))
++				execvp(gzip, cargv);
++			else
++				execv(bb_busybox_exec_path, cargv);
 +		}
 +#else
- 		execlp(gzip, gzip, "-f", (char *)0);
++		execlp(gzip, gzip, "-f", (char *)0);
 +#endif
  
  		vfork_exec_errno = errno;
  		_exit_FAILURE();
-
 --- a/console-tools/kbd_mode.c
 +++ b/console-tools/kbd_mode.c
 @@ -16,7 +16,7 @@
@@ -7002,13 +7007,10 @@
  int scripted_main(int argc UNUSED_PARAM, char **argv) MAIN_EXTERNALLY_VISIBLE;
  int scripted_main(int argc UNUSED_PARAM, char **argv)
  {
-@@ -1011,6 +1014,9 @@
+@@ -1011,6 +1014,6 @@
  
  # if NUM_SCRIPTS > 0
  /* if SINGLE_APPLET_MAIN, these two functions are simpler: */
-+#if defined(__COSMOPOLITAN__)
-+const char *bb_argv0;
-+#endif
  int scripted_main(int argc UNUSED_PARAM, char **argv) MAIN_EXTERNALLY_VISIBLE;
  int scripted_main(int argc UNUSED_PARAM, char **argv)
  {
@@ -7518,7 +7520,7 @@
   * but I want to save a few bytes here. Check libbb.h before changing! */
 --- a/libbb/u_signal_names.c
 +++ b/libbb/u_signal_names.c
-@@ -26,7 +26,49 @@
+@@ -26,7 +26,47 @@
  //config:	This behavior matches "kill -l RTMIN+n" from bash.
  
  #include "libbb.h"
@@ -7529,7 +7531,6 @@
 +#undef SIGBUS
 +#undef SIGCHLD
 +#undef SIGCONT
-+#undef SIGEMT
 +#undef SIGIO
 +#undef SIGPOLL
 +#undef SIGPWR
@@ -7547,7 +7548,6 @@
 +#define SIGBUS 7
 +#define SIGCHLD 17
 +#define SIGCONT 18
-+#define SIGEMT 7
 +#define SIGIO 29
 +#define SIGPOLL 29
 +#define SIGPWR 30
@@ -7566,9 +7566,8 @@
  
 +
  /* Believe it or not, but some arches have more than 32 SIGs!
-  * HPPA: SIGSTKFLT == 36. */
+ * HPPA: SIGSTKFLT == 36. */
  
-
 --- a/miscutils/beep.c
 +++ b/miscutils/beep.c
 @@ -30,7 +30,7 @@
@@ -8000,7 +7999,7 @@
 
 --- a/procps/ps.c
 +++ b/procps/ps.c
-@@ -109,6 +109,45 @@
+@@ -109,6 +109,47 @@
  //usage:       " 2990 andersen andersen R ps\n"
  
  #include "libbb.h"
@@ -8011,7 +8010,9 @@
 +#include <libc/nt/process.h>
 +#include <libc/nt/enum/th32cs.h>
 +#include <libc/nt/runtime.h>
-+extern void *tprecode16to8(char *, size_t, const uint16_t *) libcesque;
++#include <libc/str/str.h>
++/* 使用工具链真实声明，避免手写 void* 原型造成 ABI 不匹配。 */
++extern axdx_t tprecode16to8(char *, size_t, const char16_t *) libcesque;
 +/* cosmo 运行时宿主 OS 位掩码(_HOSTWINDOWS=4), 见 libc/dce.h */
 +extern unsigned char __hostos;
 +#define COSMO_HOST_WINDOWS 4
@@ -8046,7 +8047,7 @@
  #include "common_bufsiz.h"
  #ifdef __linux__
  # include <sys/sysinfo.h>
-@@ -551,6 +590,25 @@
+@@ -551,6 +590,29 @@
  int ps_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
  int ps_main(int argc UNUSED_PARAM, char **argv)
  {
@@ -8058,13 +8059,17 @@
 +		return cosmo_ps_main();
 +	if (__hostos & 8 /* _HOSTXNU */) {
 +		/* 透传: argv[0]=原命令, 需以 "ps" 名 exec /bin/ps */
-+		char *ps_argv[64];
++		char **ps_argv;
 +		int i, n = 0;
++		/* execvp 在当前函数上下文执行，允许按 argc 完整复制参数，
++		 * 不再静默截断第 64 个及之后的选项。 */
++		ps_argv = xmalloc((argc + 1) * sizeof(*ps_argv));
 +		ps_argv[n++] = (char*)"ps";
-+		for (i = 1; i < argc && n < 63; i++)
++		for (i = 1; i < argc; i++)
 +			ps_argv[n++] = argv[i];
 +		ps_argv[n] = NULL;
 +		execvp("/bin/ps", ps_argv);
++		free(ps_argv);
 +		/* exec 失败(cosmo mac 异常时): 报错退出 */
 +		bb_perror_msg_and_die("can't execute '/bin/ps'");
 +	}
@@ -8072,7 +8077,6 @@
  	procps_status_t *p;
  	llist_t* opt_o = NULL;
  	char default_o[sizeof(DEFAULT_O_STR)];
-
 --- a/procps/uptime.c
 +++ b/procps/uptime.c
 @@ -28,7 +28,7 @@
@@ -8127,13 +8131,14 @@
 
 --- a/shell/ash.c
 +++ b/shell/ash.c
-@@ -6103,7 +6103,49 @@
+@@ -6103,7 +6103,54 @@
  	while (redirlist != stop)
  		popredir(/*drop:*/ 0);
  }
 +
  
 +#if defined(__COSMOPOLITAN__)
++#include <alloca.h>
 +/* APE 文件(cosmo)在无 binfmt 平台: exec ENOEXEC 后交 ape loader。
 + * loader argv 需 [ape, cmd路径, 原argv0, 原argv1...]——ash 的"当脚本"
 + * fallback 会丢 argv0(applet 名), loader 路径完整保留。 */
@@ -8163,11 +8168,15 @@
 +	if (!apeloader && access("/usr/bin/ape", X_OK) == 0)
 +		apeloader = "/usr/bin/ape";
 +	if (apeloader) {
-+		char *nargv[64];
-+		int ni = 0, ai;
++		int ni = 0, ai, argc = 0;
++		char **nargv;
++		while (argv[argc]) argc++;
++		/* 该函数可能运行在 vfork 子进程；使用子栈上的可变数组，不调用
++		 * malloc，也不再把参数静默截断到 63 项。 */
++		nargv = alloca((argc + 3) * sizeof(*nargv));
 +		nargv[ni++] = (char *)apeloader;
 +		nargv[ni++] = (char *)cmd;
-+		for (ai = 0; argv[ai] && ni < 63; ai++)
++		for (ai = 0; argv[ai]; ai++)
 +			nargv[ni++] = argv[ai];
 +		nargv[ni] = NULL;
 +		execve(apeloader, nargv, envp);
@@ -8586,4 +8595,3 @@
  
  //usage:#define unshare_trivial_usage
  //usage:       "[OPTIONS] [PROG ARGS]"
-

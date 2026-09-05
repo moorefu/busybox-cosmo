@@ -114,7 +114,18 @@ MASTER="$(pick_master)"
 # ---------- cache 副本 (母本 pristine) ----------
 CACHE="${BUSYBOX_COSMO_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/busybox-cosmo}"
 mkdir -p "$CACHE"
-KEY="$OS-$ARCH-$( (cksum < "$MASTER") 2>/dev/null | cut -d' ' -f1 )"
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    echo "无法计算 SHA256（需要 sha256sum 或 shasum）" >&2
+    return 1
+  fi
+}
+MASTER_SHA="$(sha256_file "$MASTER")" || exit 1
+KEY="$OS-$ARCH-$MASTER_SHA-v2"
 RUN="$CACHE/busybox-$KEY"
 
 # mac arm64 loader 预置:**每次调用**都校验 (不能只放创建分支)。
@@ -134,8 +145,36 @@ if [ "$OS" = macos ] && [ "$ARCH" = aarch64 ]; then
   done
 fi
 
+LOCK="$CACHE/.busybox-$KEY.lock"
 if [ ! -x "$RUN" ]; then
-  cp -f "$MASTER" "$RUN.tmp" && chmod +x "$RUN.tmp" || exit 1
+  # mkdir 是可移植的原子锁；热缓存出现后等待者直接复用，避免固定
+  # RUN.tmp 被并发进程互相覆盖。超过两分钟视为陈旧锁并失败。
+  waited=0
+  have_lock=0
+  while [ ! -x "$RUN" ]; do
+    if mkdir "$LOCK" 2>/dev/null; then
+      printf '%s\n' "$$" > "$LOCK/pid"
+      have_lock=1
+      break
+    fi
+    # 上次进程异常退出时清理陈旧锁；仅在锁内记录的持有者已不存在时
+    # 操作，避免破坏仍在工作的转换。
+    if [ -f "$LOCK/pid" ]; then
+      holder="$(cat "$LOCK/pid" 2>/dev/null || true)"
+      if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+        rm -f "$LOCK/pid"
+        rmdir "$LOCK" 2>/dev/null || true
+        continue
+      fi
+    fi
+    sleep 1
+    waited=$((waited + 1))
+    [ "$waited" -lt 120 ] || { echo "缓存锁超时: $LOCK" >&2; exit 1; }
+  done
+  if [ ! -x "$RUN" ] && [ "$have_lock" = 1 ]; then
+    TMP_RUN="$(mktemp "$CACHE/.busybox-$KEY.XXXXXX")" || { rmdir "$LOCK"; exit 1; }
+    trap 'rm -f "$TMP_RUN"; rmdir "$LOCK" 2>/dev/null || true' EXIT HUP INT TERM
+    cp -f "$MASTER" "$TMP_RUN" && chmod +x "$TMP_RUN" || exit 1
 
   # ===== 副本转原生 (全功能 shell) — 平台×架构策略 (2026-09-04 实测) =====
   #   mac x86_64 : fat 内置 --assimilate 有效 (Mach-O, 免外部工具)
@@ -151,26 +190,33 @@ if [ ! -x "$RUN" ]; then
     [ -x "$a" ] && { AS="$a"; break; }
   done
   if [ -n "$AS" ]; then
-    if "$AS" -c "$RUN.tmp" >/dev/null 2>&1; then ok=1; fi
+    if "$AS" -c "$TMP_RUN" >/dev/null 2>&1; then ok=1; fi
   elif [ "$OS" = macos ] && [ "$ARCH" = x86_64 ]; then
-    "$RUN.tmp" --assimilate >/dev/null 2>&1 && ok=1   # 仅 x86_64 mac 有此分支
+    "$TMP_RUN" --assimilate >/dev/null 2>&1 && ok=1   # 仅 x86_64 mac 有此分支
   fi
 
   # 校验产物是有效原生格式 (mac: Mach-O 头; Linux: ELF 头), 失败则丢弃副本
   if [ "$ok" = 1 ]; then
-    magic="$(head -c 4 "$RUN.tmp" 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+    magic="$(head -c 4 "$TMP_RUN" 2>/dev/null | od -An -tx1 | tr -d ' \n')"
     case "$OS" in
       macos)  [ "$magic" = "cffaedfe" ] || [ "$magic" = "cefaedfe" ] || ok=0 ;;
       linux)  [ "$magic" = "7f454c46" ] || ok=0 ;;
     esac
-    [ "$ok" = 0 ] && rm -f "$RUN.tmp"
+    [ "$ok" = 0 ] && rm -f "$TMP_RUN"
   fi
 
   # 无原生副本 → 用 APE 副本 (loader 形态, 母本仍 pristine)
-  if [ ! -f "$RUN.tmp" ]; then
-    cp -f "$MASTER" "$RUN.tmp" && chmod +x "$RUN.tmp" || exit 1
+  if [ ! -f "$TMP_RUN" ]; then
+    cp -f "$MASTER" "$TMP_RUN" && chmod +x "$TMP_RUN" || exit 1
   fi
-  mv -f "$RUN.tmp" "$RUN" || { rm -f "$RUN.tmp"; exit 1; }
+  mv -f "$TMP_RUN" "$RUN" || exit 1
+  rm -f "$LOCK/pid"
+  rmdir "$LOCK" 2>/dev/null || true
+  trap - EXIT HUP INT TERM
+  else
+    # 其他进程已完成构建；若仍不存在则让下一次调用重试并报错。
+    [ -x "$RUN" ] || { echo "缓存副本未生成: $RUN" >&2; exit 1; }
+  fi
 fi
 
 # ---------- 执行: 原生副本直跑; loader 形态走 loader '-' 模式 ----------

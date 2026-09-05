@@ -15,7 +15,7 @@
 #   --full  额外把 smoke.sh 拷入并在 ELF 形态跑 (慢, qemu 模拟)
 # 产物: dist/busybox-*.ape 默认用 dist/ 下正式产物
 # ============================================================
-set -e
+set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 QDIR="$ROOT/work/qemu64k"
 VMLINUZ="$QDIR/vmlinuz-64k"
@@ -47,6 +47,7 @@ done
 [ -n "$ELF_SRC" ] || { echo "缺 arm64 ELF (先构建 busybox 或打 release)" >&2; exit 1; }
 cp "$ELF_SRC" "$IR/bin/busybox"
 cp "$ELF_SRC" "$IR/busybox-elf"
+[ "$FULL" = "--full" ] && cp "$ROOT/tests/smoke.sh" "$IR/smoke.sh"
 cp "$ROOT/dist/busybox-fat.ape" "$IR/busybox-com" 2>/dev/null || true
 cp "$ROOT/dist/busybox-aarch64.ape" "$IR/busybox-a64" 2>/dev/null || true
 
@@ -56,31 +57,47 @@ cat > "$IR/init" <<EOF
 /bin/busybox mount -t sysfs none /sys
 /bin/busybox mount -t devtmpfs none /dev 2>/dev/null
 echo "=== 内核 \$(/bin/busybox uname -r) arch=\$(/bin/busybox uname -m) ==="
-echo "=== 页大小: MemTotal KB / 页数 (524288/8184=64K 时确认) ==="
+PAGESIZE=\$(/bin/busybox getconf PAGESIZE 2>/dev/null || getconf PAGESIZE 2>/dev/null || echo 0)
+echo "=== 页大小: \$PAGESIZE ==="
+[ "\$PAGESIZE" = 65536 ] || { echo "PAGE-SIZE-FAIL"; /bin/busybox poweroff -f 2>/dev/null || true; exit 1; }
 /bin/busybox awk '/MemTotal/{print "  MemTotal",\$2,"KB"}' /proc/meminfo
-/bin/busybox chmod +x /busybox-elf /busybox-com /busybox-a64 2>/dev/null || true
+/bin/busybox chmod +x /busybox-elf /busybox-com /busybox-a64 2>/dev/null
 echo "=== A. ELF 直跑 ==="
-/busybox-elf sh -c 'echo A-ELF-OK' 2>&1 | head -1
+/busybox-elf sh -c 'echo A-ELF-OK' 2>&1 | grep -q '^A-ELF-OK$' || { echo A-ELF-FAIL; exit 1; }
 echo "=== B. fat 直接 exec (内嵌 64K loader) ==="
-/busybox-com echo B-FAT-OK 2>&1 | head -1
+/busybox-com echo B-FAT-OK 2>&1 | grep -q '^B-FAT-OK$' || { echo B-FAT-FAIL; exit 1; }
 echo "=== C. 单架构 aarch64.ape ==="
-/busybox-a64 echo C-A64-OK 2>&1 | head -1
+/busybox-a64 echo C-A64-OK 2>&1 | grep -q '^C-A64-OK$' || { echo C-A64-FAIL; exit 1; }
 echo "=== D. 嵌套 exec (loader 形态可能受限) ==="
-/busybox-com sh -c '/bin/busybox echo D-NESTED-OK' 2>&1 | head -1
+/busybox-com sh -c '/bin/busybox echo D-NESTED-OK' 2>&1 | grep -q '^D-NESTED-OK$' || { echo D-NESTED-FAIL; exit 1; }
+if [ "$FULL" = "--full" ]; then
+  echo "=== E. 完整冒烟 ==="
+  /bin/busybox sh /smoke.sh >/tmp/smoke.log 2>&1 || { echo FULL-SMOKE-FAIL; exit 1; }
+  echo FULL-SMOKE-OK
+fi
 echo "=== FINISHED ==="
 /bin/busybox poweroff -f 2>/dev/null || /bin/busybox halt -f
 EOF
 chmod +x "$IR/init" "$IR/bin/busybox"
 ( cd "$IR" && find . | cpio -o -H newc 2>/dev/null | gzip > "$QDIR/initramfs.gz" )
 
-# ---- 3. 启动 (最多等 40s) ----
+# ---- 3. 启动 (最多等 120s，缺标记即失败) ----
 echo "== qemu-system-aarch64 启动 (真 64K 内核) ..."
 qemu-system-aarch64 -M virt -cpu max -m 512M -nographic \
   -kernel "$VMLINUZ" -initrd "$QDIR/initramfs.gz" \
   -append "console=ttyAMA0 rdinit=/init" > "$QDIR/qemu-test.log" 2>&1 &
 QPID=$!
-sleep 40
+start_ts="$(date +%s)"
+deadline=$((start_ts + 120))
+while kill -0 "$QPID" 2>/dev/null && [ "$(date +%s)" -lt "$deadline" ]; do
+  grep -q '=== FINISHED ===' "$QDIR/qemu-test.log" 2>/dev/null && break
+  sleep 1
+done
 kill "$QPID" 2>/dev/null || true
 echo "== 结果 =="
 grep -E '===|OK|error|FINISHED' "$QDIR/qemu-test.log" | grep -vE '^\s*$' | tail -15
 echo "(完整日志: $QDIR/qemu-test.log)"
+for marker in '页大小: 65536' 'A-ELF-OK' 'B-FAT-OK' 'C-A64-OK' 'D-NESTED-OK' '=== FINISHED ==='; do
+  grep -q "$marker" "$QDIR/qemu-test.log" || { echo "缺少 QEMU 标记: $marker" >&2; exit 1; }
+done
+[ "$FULL" != "--full" ] || grep -q 'FULL-SMOKE-OK' "$QDIR/qemu-test.log" || { echo "缺少 QEMU 标记: FULL-SMOKE-OK" >&2; exit 1; }

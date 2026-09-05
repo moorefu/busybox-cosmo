@@ -64,7 +64,8 @@ cache: $BUSYBOX_COSMO_CACHE → $XDG_CACHE_HOME/busybox-cosmo → ~/.cache/busyb
 自 2026-09-04 修复后嵌套 exec 已全功能 (launcher 自动置 ~/.ape-1.10);
 全功能替代: mac x86_64 自同化, Linux sudo ./busybox --setup-linux。
 EOF
-  ( cd "$MIN_OUT" && zip -q "$DIST_DIR/busybox-min.zip" busybox.com busybox \
+  rm -f "$DIST_DIR/busybox-min.zip"
+  ( cd "$MIN_OUT" && zip -X -q "$DIST_DIR/busybox-min.zip" busybox.com busybox \
       ape-loader-aarch64 ape-loader-x86_64 \
       ape-loader-macos-arm64 ape-loader-macos-x86_64 README.txt )
   echo "最小包完成: $DIST_DIR/busybox-min.zip"
@@ -103,9 +104,20 @@ cp "$ROOT/install.sh" "$OUT/release/install.sh" && chmod 755 "$OUT/release/insta
 cp "$ROOT/docs/PROJECT-HISTORY.md" "$OUT/release/PROJECT-HISTORY.md" 2>/dev/null || true
 cp "$ROOT/docs/VERIFICATION-MATRIX.md" "$OUT/release/VERIFICATION-MATRIX.md" 2>/dev/null || true
 cp "$ROOT/docs/RUN-NO-SELF-MODIFY.md" "$OUT/release/RUN-NO-SELF-MODIFY.md" 2>/dev/null || true
+cp "$ROOT/docs/KNOWN-LIMITATIONS.md" "$ROOT/docs/REMEDIATION-PLAN.md" "$ROOT/docs/COSMO-ABI-CONTRACTS.md" "$OUT/release/" 2>/dev/null || true
+cp "$ROOT/NOTICE.md" "$OUT/release/NOTICE.md" 2>/dev/null || true
+cp "$ROOT/src/busybox-$BB_VER/LICENSE" "$OUT/release/BUSYBOX-LICENSE" 2>/dev/null || true
 
 echo "=== 5. 生成 README.txt ==="
-BUILD_DATE="$(date '+%Y-%m-%d')"
+if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+  if date -u -d "@$SOURCE_DATE_EPOCH" '+%Y-%m-%d' >/dev/null 2>&1; then
+    BUILD_DATE="$(date -u -d "@$SOURCE_DATE_EPOCH" '+%Y-%m-%d')"
+  else
+    BUILD_DATE="$(date -u -r "$SOURCE_DATE_EPOCH" '+%Y-%m-%d')"
+  fi
+else
+  BUILD_DATE="$(date -u '+%Y-%m-%d')"
+fi
 cat > "$OUT/release/README.txt" <<EOF
 busybox-$BB_VER cosmopolitan 发布包 ($BUILD_DATE, 本工程可复现构建)
 
@@ -125,7 +137,7 @@ busybox-$BB_VER cosmopolitan 发布包 ($BUILD_DATE, 本工程可复现构建)
   smoke-test.bat             Windows 冒烟
   md5sums.txt                校验清单
 
-工程: /Users/moore/Projects/busybox-cosmo (补丁/config/脚本/doc 均入库, 可复现)
+工程: busybox-cosmo (补丁/config/脚本/doc 均入库, 可复现)
 复现: SOURCE_DATE_EPOCH=<epoch> make build   (固定后逐位可复现, 见 VERIFICATION-MATRIX.md)
 
 重要规则:
@@ -140,8 +152,10 @@ busybox-$BB_VER cosmopolitan 发布包 ($BUILD_DATE, 本工程可复现构建)
   4. 顶层命令/单测可直接 ./busybox-x86_64.ape sh smoke-full.sh(loader 形态可跑多数项)。
 EOF
 echo "=== 6. 校验清单与打包 zip ==="
-( cd "$OUT/release" && md5 * > md5sums.txt 2>/dev/null || md5sum * > md5sums.txt )
-( cd "$OUT" && zip -qr "$DIST_DIR/busybox-cosmo-release.zip" release )
+( cd "$OUT/release" && { md5 * > md5sums.txt 2>/dev/null || md5sum * > md5sums.txt; } )
+( cd "$OUT/release" && sha256sum * > SHA256SUMS 2>/dev/null || shasum -a 256 * > SHA256SUMS )
+rm -f "$DIST_DIR/busybox-cosmo-release.zip"
+( cd "$OUT" && zip -X -qr "$DIST_DIR/busybox-cosmo-release.zip" release )
 
 echo ""
 echo "=== 发布包完成 ==="

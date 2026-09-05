@@ -17,6 +17,8 @@
 | QuickEdit 鼠标补丁 | tcsetattr 定制已打入工具链 | 需 Windows 最终确认 |
 | APE 同化 | 首跑改写自身为平台格式; 分发必须 zip 母本 | 设计使然, 测试纪律 |
 | `zcat` | busybox 本义为 .Z 解压器; 解 gzip 用 `gzip -dc` | 用法说明 |
+| `tar cJf` | BusyBox `xz/lzma` 入口通常只有解码能力；创建 xz 包需要 PATH 中独立的外部编码器。缺少编码器时应返回非零，不生成可误判为空的归档 | 已在 cosmo 分支分流；外部依赖需在发布环境提供 |
+| `stty` termios 索引 | Cosmopolitan 的 macOS/BSD `c_cc` 布局与 Linux 不同，当前 BusyBox 补丁仍使用编译期兼容表；真实 macOS/Windows PTY 运行时适配尚未作为本轮完成项 | P0，待专用 PTY 验证与运行时索引改造 |
 | Windows exec argv 含 `\`+`"` 序列 | cosmo Windows 由 argv 重建 CreateProcess 命令行时, 参数内「反斜杠紧跟双引号」曾错乱 (`x\"y` → `x"\y`), 使 `awk "{...\"...\"}"` 等传参失败。**已自建补丁修复**: `patches/cosmo/cosmo-mkntcmdline-roundtrip-extra.patch` (mkntcmdline 遇引号前反斜杠先行双写), 真实二进制 round-trip 全组合验证一致 | ✅ 自建补丁 (2026-09-04); 测试用例保留 heredoc/-v 规避写法 (deep-test/smoke-full) 作跨平台基线 |
 
 ## 结构约束
