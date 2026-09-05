@@ -1,6 +1,9 @@
 #!/bin/sh
 # 最小跨平台菜单示例：同一业务逻辑支持非交互和行式交互。
 HERE="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+if [ -z "${BBP_BUSYBOX:-}" ] && [ -x "$HERE/busybox" ]; then
+	BBP_BUSYBOX="$HERE/busybox"
+fi
 . "$HERE/lib/portable.sh" || exit 2
 
 if [ "$#" -gt 0 ]; then

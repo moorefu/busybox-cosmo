@@ -6,6 +6,9 @@ if [ -f "$SCRIPT_DIR/../lib/portable.sh" ]; then
 else
 	HERE="$SCRIPT_DIR"
 fi
+if [ -z "${BBP_BUSYBOX:-}" ] && [ -x "$HERE/busybox" ]; then
+	BBP_BUSYBOX="$HERE/busybox"
+fi
 . "$HERE/lib/portable.sh" || exit 2
 FAIL=0
 

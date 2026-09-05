@@ -7,6 +7,14 @@ if [ -f "$SCRIPT_DIR/lib/portable.sh" ]; then
 else
 	HERE="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 fi
+if [ -z "${BBP_BUSYBOX:-}" ]; then
+	for bbcosmo_candidate in "$HERE/busybox" "$HERE/busybox.com"; do
+		if [ -x "$bbcosmo_candidate" ]; then
+			BBP_BUSYBOX=$bbcosmo_candidate
+			break
+		fi
+	done
+fi
 . "$HERE/lib/portable.sh" || exit 2
 
 usage() {
