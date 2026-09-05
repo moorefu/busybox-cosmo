@@ -71,10 +71,12 @@ check_arch() { # $1=arch  $2=elf  $3=rd
     [ -n "$al" ] || continue
     n=$((n+1))
     okalign=1
-    case "$al" in
-      0x10000|0x20000|0x40000|0x80000|0x100000) ;;
-      *) echo "  ✗ [$1] LOAD$n Align=$al (< 0x10000, 64K 内核不可加载)"; okalign=0; fail=1 ;;
-    esac
+    align_dec=$(( 16#${al#0x} ))
+    if [ "$align_dec" -lt 65536 ] || [ $(( align_dec % 65536 )) -ne 0 ]; then
+      echo "  ✗ [$1] LOAD$n Align=$al (< 0x10000 或非 64K 倍数)"
+      okalign=0
+      fail=1
+    fi
     d=$(( 16#${va#0x} - 16#${off#0x} ))
     r=$(( d % 65536 )); [ $r -lt 0 ] && r=$(( r + 65536 ))
     if [ "$r" != 0 ]; then

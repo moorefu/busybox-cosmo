@@ -19,6 +19,7 @@ from pathlib import Path
 
 
 def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    kwargs.setdefault("timeout", 30)
     return subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
 
 
@@ -100,14 +101,23 @@ def probe_tar(busybox: str) -> bool:
         (source / "payload").write_text("tar-xz-kat\n", encoding="utf-8")
         archive = root_path / "payload.txz"
         env = os.environ.copy()
-        env["PATH"] = str(Path(xz).parent)
+        # 保留 launcher 所需的 dirname/uname 等宿主命令，只把 xz 所在目录放在 PATH 前面。
+        original_path = env.get("PATH", "")
+        env["PATH"] = str(Path(xz).parent) + os.pathsep + original_path
         encoded = run([busybox, "tar", "cJf", str(archive), "source"], cwd=root, env=env)
         decoded = run([busybox, "tar", "xJf", str(archive), "-O", "source/payload"], cwd=root, env=env)
 
-        # PATH 中只放一个不存在的 xz，必须清晰失败，不能误走 BusyBox xz 自执行。
+        # PATH 首位放一个失败假编码器，必须清晰失败，不能误走 BusyBox xz 自执行。
         no_xz = root_path / "no-xz"
         no_xz.mkdir()
-        missing = run([busybox, "tar", "cJf", str(root_path / "missing.txz"), "source"], cwd=root, env={**env, "PATH": str(no_xz)})
+        fake_xz = no_xz / "xz"
+        fake_xz.write_text("#!/bin/sh\nexit 127\n", encoding="utf-8")
+        fake_xz.chmod(0o755)
+        missing = run(
+            [busybox, "tar", "cJf", str(root_path / "missing.txz"), "source"],
+            cwd=root,
+            env={**env, "PATH": str(no_xz) + os.pathsep + original_path},
+        )
         ok = (
             encoded.returncode == 0
             and archive.stat().st_size > 0
@@ -145,7 +155,7 @@ def main() -> int:
     for name, check in selected:
         try:
             ok = check(busybox) and ok
-        except (OSError, PermissionError) as exc:
+        except (OSError, PermissionError, subprocess.TimeoutExpired) as exc:
             print(f"ERROR {name}: 无法启动 BusyBox: {exc}", file=sys.stderr)
             ok = False
     return 0 if ok else 1

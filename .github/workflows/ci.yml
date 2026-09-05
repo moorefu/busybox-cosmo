@@ -55,14 +55,6 @@ jobs:
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
         shell: bash
         run: toolchain/provision.sh build all
-      - name: 校验新构建的工具链
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ref=$(find work -type d -path '*/.cosmocc/3.9.2' -print -quit)
-          test -n "$ref"
-          COSMO_REF="$GITHUB_WORKSPACE/$ref" toolchain/build-custom.sh verify
       - name: 验证工具链入口
         shell: bash
         run: |

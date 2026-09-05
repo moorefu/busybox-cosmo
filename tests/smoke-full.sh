@@ -12,6 +12,7 @@
 # ============================================================
 PASS=0; FAIL=0; SKIP=0; SOFT=0
 LIST=""
+TM_SEQ=0
 
 # 所有临时文件隔离到唯一目录；失败时保留目录位置，避免并发运行互相
 # 覆盖，也不污染调用者当前目录。
@@ -72,11 +73,16 @@ ts() {
 # 输出式断言: 期望 stdout 匹配 grep 模式
 tm() { # tm <desc> <pattern> <cmd...>
 	desc="$1"; pat="$2"; shift 2
-	if "$@" 2>/dev/null | grep -qE "$pat"; then
+	TM_SEQ=$((TM_SEQ+1))
+	out="tm-output-$$-$TM_SEQ"
+	producer_rc=0
+	"$@" >"$out" 2>/dev/null || producer_rc=$?
+	if [ "$producer_rc" -eq 0 ] && grep -qE "$pat" "$out"; then
 		echo "PASS: $desc"; PASS=$((PASS+1)); g_PASS=$((g_PASS+1))
 	else
 		echo "FAIL: $desc"; FAIL=$((FAIL+1)); g_FAIL=$((g_FAIL+1))
 	fi
+	rm -f "$out"
 }
 # Windows 平台缺口(cosmo 模拟限制) → 记 SKIP 不执行, 避免挂死/误判
 ws() { # ws <desc> <原因>

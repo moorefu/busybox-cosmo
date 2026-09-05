@@ -63,13 +63,17 @@ echo "=== 页大小: \$PAGESIZE ==="
 /bin/busybox awk '/MemTotal/{print "  MemTotal",\$2,"KB"}' /proc/meminfo
 /bin/busybox chmod +x /busybox-elf /busybox-com /busybox-a64 2>/dev/null
 echo "=== A. ELF 直跑 ==="
-/busybox-elf sh -c 'echo A-ELF-OK' 2>&1 | grep -q '^A-ELF-OK$' || { echo A-ELF-FAIL; exit 1; }
+/busybox-elf sh -c 'echo A-ELF-OK' >/tmp/qemu-a.log 2>&1 || { cat /tmp/qemu-a.log; echo A-ELF-FAIL; exit 1; }
+grep -q '^A-ELF-OK$' /tmp/qemu-a.log || { cat /tmp/qemu-a.log; echo A-ELF-FAIL; exit 1; }
 echo "=== B. fat 直接 exec (内嵌 64K loader) ==="
-/busybox-com echo B-FAT-OK 2>&1 | grep -q '^B-FAT-OK$' || { echo B-FAT-FAIL; exit 1; }
+/busybox-com echo B-FAT-OK >/tmp/qemu-b.log 2>&1 || { cat /tmp/qemu-b.log; echo B-FAT-FAIL; exit 1; }
+grep -q '^B-FAT-OK$' /tmp/qemu-b.log || { cat /tmp/qemu-b.log; echo B-FAT-FAIL; exit 1; }
 echo "=== C. 单架构 aarch64.ape ==="
-/busybox-a64 echo C-A64-OK 2>&1 | grep -q '^C-A64-OK$' || { echo C-A64-FAIL; exit 1; }
+/busybox-a64 echo C-A64-OK >/tmp/qemu-c.log 2>&1 || { cat /tmp/qemu-c.log; echo C-A64-FAIL; exit 1; }
+grep -q '^C-A64-OK$' /tmp/qemu-c.log || { cat /tmp/qemu-c.log; echo C-A64-FAIL; exit 1; }
 echo "=== D. 嵌套 exec (loader 形态可能受限) ==="
-/busybox-com sh -c '/bin/busybox echo D-NESTED-OK' 2>&1 | grep -q '^D-NESTED-OK$' || { echo D-NESTED-FAIL; exit 1; }
+/busybox-com sh -c '/bin/busybox echo D-NESTED-OK' >/tmp/qemu-d.log 2>&1 || { cat /tmp/qemu-d.log; echo D-NESTED-FAIL; exit 1; }
+grep -q '^D-NESTED-OK$' /tmp/qemu-d.log || { cat /tmp/qemu-d.log; echo D-NESTED-FAIL; exit 1; }
 if [ "$FULL" = "--full" ]; then
   echo "=== E. 完整冒烟 ==="
   /bin/busybox sh /smoke.sh >/tmp/smoke.log 2>&1 || { echo FULL-SMOKE-FAIL; exit 1; }
