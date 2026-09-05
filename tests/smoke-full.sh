@@ -130,13 +130,21 @@ t "mv 跨目录" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo m>"$d/f" && mv
 t "ln 硬链接" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo l>"$d/h" && ln "$d/h" "$d/i" && test "$d/h" -ef "$d/i" && rm -rf "$d"'
 t "ln -s 符号链接" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo s>"$d/r" && ln -sfn r "$d/s" && test -e "$d/s" && rm -rf "$d"'
 t "dd bs/count/seek" sh -c 'printf xxxxxxxx | dd bs=2 count=4 2>/dev/null | wc -c | grep -q 8'
-t "dd 写文件大小" sh -c 'dd if=/dev/zero of=sf.bin bs=100 count=3 2>/dev/null && test "$(wc -c <sf.bin)" = 300 && rm -f sf.bin'
+if [ "$IS_WIN" = 1 ]; then
+	ws "dd 写文件大小" "win: 无 POSIX /dev/zero，见 KNOWN-LIMITATIONS"
+else
+	t "dd 写文件大小" sh -c 'dd if=/dev/zero of=sf.bin bs=100 count=3 2>/dev/null && test "$(wc -c <sf.bin)" = 300 && rm -f sf.bin'
+fi
 t "ls -l 可读" sh -c 'touch sf.f && ls -l sf.f | grep -q -- "-rw" && rm -f sf.f'
 t "ls -a 隐藏" sh -c 'touch .sfh && ls -a | grep -q ".sfh" && rm -f .sfh'
 t "stat 文件" sh -c 'touch sf.f && stat sf.f >/dev/null 2>&1 && rm -f sf.f'
 t "find 深度递归" sh -c 'd=sf.d; rm -rf "$d" && mkdir -p "$d/a/b" && echo z>"$d/a/b/z" && find "$d" -name z | grep -q z && rm -rf "$d"'
 t "find -type d" sh -c 'd=sf.d; rm -rf "$d" && mkdir -p "$d/x" && find "$d" -type d | grep -q x && rm -rf "$d"'
-t "chmod 位" sh -c 'touch sf.f && chmod 755 sf.f && test "$(stat -c %a sf.f 2>/dev/null || stat -f %Lp sf.f)" = 755 && rm -f sf.f'
+if [ "$IS_WIN" = 1 ]; then
+	ws "chmod 位" "win: NTFS 权限不等价 POSIX mode，见 KNOWN-LIMITATIONS"
+else
+	t "chmod 位" sh -c 'touch sf.f && chmod 755 sf.f && test "$(stat -c %a sf.f 2>/dev/null || stat -f %Lp sf.f)" = 755 && rm -f sf.f'
+fi
 t "touch 时间戳" sh -c 'touch sf.f && (touch -d 2000-01-01 sf.f 2>/dev/null || touch -t 200001010000 sf.f) && test -e sf.f && rm -f sf.f'
 t "seq/read 生成" sh -c 'seq 1 5 | wc -l | grep -q 5'
 t "truncate/扩展" sh -c 'echo abc > sf.f && truncate -s 10 sf.f 2>/dev/null && test "$(wc -c <sf.f)" = 10 && rm -f sf.f'
@@ -169,7 +177,7 @@ t "hexdump" sh -c 'echo hi | hexdump -C | grep -q "68 69"'
 t "base64 编码" sh -c 'test "$(echo hi | base64 | tr -d "\n")" = aGkK'
 t "base64 解码" sh -c 'echo aGk= | base64 -d | grep -q hi'
 t "comm 求交" sh -c 'printf "x\ny\n" | sort > a && printf "x\nz\n" | sort > b && comm -12 a b | grep -q "^x$" && rm -f a b'
-t "join" sh -c 'printf "1 x\n" > a && printf "1 y\n" > b && join a b | grep -q "1 x y" && rm -f a b'
+tn join "join" sh -c 'printf "1 x\n" > a && printf "1 y\n" > b && join a b | grep -q "1 x y" && rm -f a b'
 t "paste 并排" sh -c 'printf "a\n" > a && printf "1\n" > b && paste a b | grep -q "a[[:space:]]*1" && rm -f a b'
 t "fold 折行" sh -c 'echo abcd | fold -w2 | head -1 | grep -q "^ab$"'
 t "expand 展开制表" sh -c 'printf "a\tb\n" | expand | grep -qE "a[ ]+b"'
