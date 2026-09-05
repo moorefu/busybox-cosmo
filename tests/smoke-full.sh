@@ -16,7 +16,14 @@ TM_SEQ=0
 
 # 所有临时文件隔离到唯一目录；失败时保留目录位置，避免并发运行互相
 # 覆盖，也不污染调用者当前目录。
-TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/busybox-smoke.XXXXXX")" || exit 2
+# Windows cosmo 上可能没有 POSIX /tmp，且 mktemp 对 Windows 路径解析不一致。
+# 在当前可写的发布目录创建带 PID 的隔离目录，不依赖宿主 mktemp。
+TEST_ROOT="busybox-smoke-$$"
+suffix=0
+while ! mkdir "$TEST_ROOT" 2>/dev/null; do
+	suffix=$((suffix + 1))
+	TEST_ROOT="busybox-smoke-$$-$suffix"
+done
 KEEP_TEST_ROOT="${KEEP_TEST_ROOT:-0}"
 cleanup_smoke() {
 	if [ "$KEEP_TEST_ROOT" = 1 ]; then
@@ -180,8 +187,16 @@ fi
 t "gzip 往返" sh -c 'echo data | gzip -c > sf.gz && gzip -dc sf.gz | grep -q data && rm -f sf.gz'
 t "gzip 多级压缩" sh -c 'echo data | gzip -9 -c > sf.gz && gzip -dc sf.gz | grep -q data && rm -f sf.gz'
 t "bzip2 往返" sh -c 'echo data | bzip2 -c > sf.bz2 && bunzip2 -c sf.bz2 | grep -q data && rm -f sf.bz2'
-t "xz 往返" sh -c 'echo data | xz -c > sf.xz && xzcat sf.xz | grep -q data && rm -f sf.xz'
-t "lzma 往返" sh -c 'echo data | lzma -c > sf.lzma && unlzma -c sf.lzma 2>/dev/null | grep -q data && rm -f sf.lzma'
+if printf x | xz -c 2>/dev/null | xz -d 2>/dev/null | grep -q x; then
+	t "xz 往返" sh -c 'echo data | xz -c > sf.xz && xzcat sf.xz | grep -q data && rm -f sf.xz'
+else
+	ws "xz 往返" "BusyBox xz 仅解码，未找到可编码的外部 xz"
+fi
+if printf x | lzma -c 2>/dev/null | unlzma -c 2>/dev/null | grep -q x; then
+	t "lzma 往返" sh -c 'echo data | lzma -c > sf.lzma && unlzma -c sf.lzma 2>/dev/null | grep -q data && rm -f sf.lzma'
+else
+	ws "lzma 往返" "BusyBox lzma 仅解码，未找到可编码的外部 lzma"
+fi
 t "cpio 打包解出" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo c>"$d/f" && (cd "$d" && echo f | cpio -o -H newc 2>/dev/null) > sf.cpio && rm -rf "$d/out" && mkdir "$d/out" && (cd "$d/out" && cpio -i -d -F ../../sf.cpio 2>/dev/null) && grep -q c "$d/out/f" && rm -rf "$d" sf.cpio'
 if have unzip && have zip; then
 	t "unzip/zip 往返" sh -c 'rm -rf sf.zipx && mkdir sf.zipx && echo z > sf.zipx/f && (cd sf.zipx && zip -q ../sf.zip f) && mkdir sf.unzipx && (cd sf.unzipx && unzip -q ../sf.zip) && cmp sf.zipx/f sf.unzipx/f && rm -rf sf.zipx sf.unzipx sf.zip'
@@ -208,7 +223,7 @@ t "管道与 \$?" sh -c 'echo x | grep -q x && test $? = 0'
 t "多命令 && / ;" sh -c 'true && true && test $? = 0'
 t "子 shell ( )" sh -c '(cd /; test "$(pwd)" = /)'
 t "后台 & + wait" sh -c 'sleep 0.2 & wait; echo done | grep -q done'
-t "重定向 < > >>" sh -c 'echo 1>sf.o && echo 2>>sf.o && test "$(wc -l <sf.o)" = 2 && rm -f sf.o'
+t "重定向 < > >>" sh -c 'rm -f sf.o; echo 1 >sf.o; r1=$?; echo 2 >>sf.o; r2=$?; test "$r1" = 0 && test "$r2" = 0 && test "$(wc -l <sf.o)" = 2 && rm -f sf.o'
 t "here-doc" sh -c 'cat <<EOF > sf.h
 line1
 EOF
@@ -342,7 +357,7 @@ group "vi/编辑器与 misc"
 t "vi 可启动" sh -c 'echo hi > sf.v && vi -c "q!" sf.v </dev/null >/dev/null 2>&1; rc=$?; rm -f sf.v; test "$rc" = 0 -o "$rc" = 1'
 tm "cat -n 行号" "^[[:space:]]*1" sh -c 'echo x | cat -n'
 t "od -c 可视" sh -c 'echo x | od -c | grep -q x'
-t "strings 二进制字符串" sh -c 'printf "hi\0world" > sf.b && strings sf.b 2>/dev/null | grep -q hi && rm -f sf.b'
+t "strings 二进制字符串" sh -c 'printf "hello\0world" > sf.b && strings sf.b 2>/dev/null | grep -q hello && rm -f sf.b'
 tm "rev 反转" "olleh" sh -c 'echo hello | rev'
 tm "shuf 排列" "^[ab]" sh -c 'printf "a\nb\n" | shuf'
 tm "yes 输出截断" "^y$" sh -c 'yes | head -1'

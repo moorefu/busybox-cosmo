@@ -6,7 +6,14 @@ PASS=0
 FAIL=0
 SKIP=0
 
-TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/busybox-deep.XXXXXX")" || exit 2
+# Windows cosmo 上可能没有 POSIX /tmp，且 mktemp 对 Windows 路径解析不一致。
+# 在当前可写的发布目录创建带 PID 的隔离目录，不依赖宿主 mktemp。
+TEST_ROOT="busybox-deep-$$"
+suffix=0
+while ! mkdir "$TEST_ROOT" 2>/dev/null; do
+	suffix=$((suffix + 1))
+	TEST_ROOT="busybox-deep-$$-$suffix"
+done
 KEEP_TEST_ROOT="${KEEP_TEST_ROOT:-0}"
 cleanup_deep() {
 	if [ "$KEEP_TEST_ROOT" = 1 ]; then
