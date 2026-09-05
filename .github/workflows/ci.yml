@@ -30,6 +30,7 @@ jobs:
           for file in tests/*.sh; do
             sh -n "$file"
           done
+          python3 -m py_compile tests/ci-platform-probe.py
 
   build:
     name: 构建
@@ -40,7 +41,7 @@ jobs:
       - name: 检出源码
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: 安装宿主依赖
-        run: sudo apt-get update && sudo apt-get install -y bzip2 patch unzip zip
+        run: sudo apt-get update && sudo apt-get install -y bzip2 patch unzip zip xz-utils
       - name: 设置可复现时间戳
         shell: bash
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
@@ -49,11 +50,19 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: toolchain/cosmo
-          key: cosmo-toolchain-${{ runner.os }}-${{ hashFiles('toolchain/*.sh', 'patches/cosmo/**/*') }}
+          key: cosmo-toolchain-v3-${{ runner.os }}-${{ hashFiles('toolchain/*.sh', 'patches/cosmo/**/*') }}
       - name: 从锁定源码构建定制工具链
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
         shell: bash
         run: toolchain/provision.sh build all
+      - name: 校验新构建的工具链
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref=$(find work -type d -path '*/.cosmocc/3.9.2' -print -quit)
+          test -n "$ref"
+          COSMO_REF="$GITHUB_WORKSPACE/$ref" toolchain/build-custom.sh verify
       - name: 验证工具链入口
         shell: bash
         run: |
@@ -99,6 +108,26 @@ jobs:
           path: dist/busybox-min.zip
           if-no-files-found: error
           retention-days: 7
+      - name: 保存构建证据
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "commit=$(git rev-parse HEAD)"
+            echo "source_date_epoch=${SOURCE_DATE_EPOCH:-}"
+            uname -a
+            uname -m
+            file toolchain/cosmo/bin/*-cosmo-cc toolchain/cosmo/bin/apelink 2>/dev/null || true
+            sha256sum dist/release/release/* dist/busybox-min.zip 2>/dev/null || true
+          } > "$RUNNER_TEMP/build-info.txt"
+      - name: 上传构建证据
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-build-evidence
+          path: ${{ runner.temp }}/build-info.txt
+          if-no-files-found: warn
+          retention-days: 14
 
   unix-matrix:
     needs: build
@@ -127,6 +156,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.experimental }}
     steps:
+      - name: 检出源码（探针）
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: 下载发布物
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -138,6 +169,34 @@ jobs:
       - name: 校验运行架构
         shell: bash
         run: test "$(uname -m)" = "${{ matrix.arch }}"
+      - name: 采集宿主与产物信息
+        shell: bash
+        run: |
+          {
+            echo "runner=${{ matrix.runner }}"
+            echo "expected_arch=${{ matrix.arch }}"
+            date -u
+            uname -a
+            uname -m
+            command -v xz && xz --version | head -1 || true
+            sw_vers 2>/dev/null || true
+            sysctl -n hw.model hw.optional.arm64 hw.optional.avx2 2>/dev/null || true
+            file release/busybox release/busybox.com release/busybox-fat.ape release/busybox-arm64.ape 2>/dev/null || true
+            sha256sum release/* 2>/dev/null || shasum -a 256 release/* 2>/dev/null || true
+          } > "$RUNNER_TEMP/platform-info.txt"
+          cat "$RUNNER_TEMP/platform-info.txt"
+      - name: 运行待定兼容性探针（报告，不阻断）
+        shell: bash
+        env:
+          BUSYBOX_COSMO_CACHE: ${{ runner.temp }}/busybox-cosmo-probe-cache
+        run: |
+          set +e
+          python3 "$GITHUB_WORKSPACE/tests/ci-platform-probe.py" \
+            "$GITHUB_WORKSPACE/release/busybox" \
+            > "$RUNNER_TEMP/platform-probe.log" 2>&1
+          probe_rc=$?
+          cat "$RUNNER_TEMP/platform-probe.log"
+          echo "探针返回值=$probe_rc（当前仅采证，待基线稳定后提升为门禁）"
       - name: 运行深度与完整测试
         shell: bash
         working-directory: release
@@ -145,11 +204,25 @@ jobs:
           BUSYBOX_COSMO_CACHE: ${{ runner.temp }}/busybox-cosmo-cache
         run: |
           set +e
-          ./busybox sh deep-test.sh
+          ./busybox sh deep-test.sh > "$RUNNER_TEMP/deep-test.log" 2>&1
           deep_rc=$?
-          ./busybox sh smoke-full.sh
+          cat "$RUNNER_TEMP/deep-test.log"
+          ./busybox sh smoke-full.sh > "$RUNNER_TEMP/smoke-full.log" 2>&1
           full_rc=$?
+          cat "$RUNNER_TEMP/smoke-full.log"
           test "$deep_rc" -eq 0 -a "$full_rc" -eq 0
+      - name: 上传 Unix 平台证据
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-evidence-${{ runner.os }}-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/platform-info.txt
+            ${{ runner.temp }}/platform-probe.log
+            ${{ runner.temp }}/deep-test.log
+            ${{ runner.temp }}/smoke-full.log
+          if-no-files-found: warn
+          retention-days: 14
 
   windows-matrix:
     needs: build
@@ -170,11 +243,30 @@ jobs:
     continue-on-error: ${{ matrix.experimental }}
     timeout-minutes: 30
     steps:
+      - name: 采集宿主信息
+        shell: pwsh
+        run: |
+          @(
+            "runner=${{ matrix.runner }}"
+            "expected_arch=${{ matrix.arch }}"
+            (Get-Date).ToUniversalTime().ToString("o")
+            ((Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption)
+            "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+            "PROCESSOR_IDENTIFIER=$env:PROCESSOR_IDENTIFIER"
+          ) | Out-File -Encoding utf8 "$env:RUNNER_TEMP/platform-info.txt"
+          Get-FileHash "$env:RUNNER_TEMP/platform-info.txt" -Algorithm SHA256 | Format-List
       - name: 下载发布物
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: busybox-release
           path: release
+      - name: 记录 Windows 产物摘要
+        shell: pwsh
+        run: |
+          Get-ChildItem release -File | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } |
+            Add-Content -Encoding utf8 "$env:RUNNER_TEMP/platform-info.txt"
+          Get-Content "$env:RUNNER_TEMP/platform-info.txt"
       - name: 校验运行架构
         shell: pwsh
         run: |
@@ -182,12 +274,25 @@ jobs:
             throw "意外架构: $env:PROCESSOR_ARCHITECTURE"
           }
       - name: 运行深度与完整测试
-        shell: cmd
+        shell: pwsh
         working-directory: release
         run: |
-          busybox.com sh deep-test.sh
-          set DEEP_RC=%ERRORLEVEL%
-          busybox.com sh smoke-full.sh
-          set FULL_RC=%ERRORLEVEL%
-          if not "%DEEP_RC%"=="0" exit /b %DEEP_RC%
-          if not "%FULL_RC%"=="0" exit /b %FULL_RC%
+          & .\busybox.com sh deep-test.sh *> "$env:RUNNER_TEMP/deep-test.log"
+          $deepRc = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/deep-test.log"
+          & .\busybox.com sh smoke-full.sh *> "$env:RUNNER_TEMP/smoke-full.log"
+          $fullRc = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/smoke-full.log"
+          if ($deepRc -ne 0) { exit $deepRc }
+          if ($fullRc -ne 0) { exit $fullRc }
+      - name: 上传 Windows 平台证据
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-evidence-${{ runner.os }}-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/platform-info.txt
+            ${{ runner.temp }}/deep-test.log
+            ${{ runner.temp }}/smoke-full.log
+          if-no-files-found: warn
+          retention-days: 14
