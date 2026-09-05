@@ -1,8 +1,11 @@
-# busybox-1.38.0 cosmopolitan 适配完整补丁 (2026-09-03 最终)
-# 应用: cd busybox-1.38.0 && patch -p1 < busybox-1.38.0-cosmo-full.patch
+# busybox-1.38.0 cosmopolitan 适配完整补丁（由 GNU 兼容 diff 重新规范化）
+# 应用：cd busybox-1.38.0 && patch -p1 < busybox-1.38.0-cosmo-full.patch
+
+diff --git a/Makefile b/Makefile
+index 13488b7..affda36 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -290,7 +290,7 @@
+@@ -290,7 +290,7 @@ MAKEFLAGS += -rR
  
  AS		= $(CROSS_COMPILE)as
  CC		= $(CROSS_COMPILE)gcc
@@ -11,7 +14,7 @@
  CPP		= $(CC) -E
  AR		= $(CROSS_COMPILE)ar
  NM		= $(CROSS_COMPILE)nm
-@@ -490,7 +490,6 @@
+@@ -490,7 +490,6 @@ libs-y		:= \
  		runit/ \
  		selinux/ \
  		shell/ \
@@ -19,14 +22,14 @@
  		util-linux/ \
  		util-linux/volume_id/ \
  
-
+diff --git a/archival/tar.c b/archival/tar.c
+index 87ad7bb..7abf27a 100644
 --- a/archival/tar.c
 +++ b/archival/tar.c
-@@ -619,7 +619,25 @@
+@@ -619,7 +619,25 @@ static void NOINLINE vfork_compressor(int tar_fd, const char *gzip)
  		// if xz is an enabled applet, it'll be a version which
  		// can only decompress. We do need to execute external
  		// program, not applet.
--		execlp(gzip, gzip, "-f", (char *)0);
 +#if defined(__COSMOPOLITAN__)
 +		/* cosmo: gzip/bzip2 applet 具备编码能力，可以自执行；xz/lzma
 +		 * 在 BusyBox 中通常只有解码入口，必须调用 PATH 中的外部编码器。
@@ -44,11 +47,13 @@
 +				execv(bb_busybox_exec_path, cargv);
 +		}
 +#else
-+		execlp(gzip, gzip, "-f", (char *)0);
+ 		execlp(gzip, gzip, "-f", (char *)0);
 +#endif
  
  		vfork_exec_errno = errno;
  		_exit_FAILURE();
+diff --git a/console-tools/kbd_mode.c b/console-tools/kbd_mode.c
+index 1ec2575..5d9a379 100644
 --- a/console-tools/kbd_mode.c
 +++ b/console-tools/kbd_mode.c
 @@ -16,7 +16,7 @@
@@ -60,7 +65,8 @@
  
  //usage:#define kbd_mode_trivial_usage
  //usage:       "[-a|k|s|u] [-C TTY]"
-
+diff --git a/console-tools/openvt.c b/console-tools/openvt.c
+index c35617e..34358f8 100644
 --- a/console-tools/openvt.c
 +++ b/console-tools/openvt.c
 @@ -16,7 +16,7 @@
@@ -72,7 +78,8 @@
  
  //usage:#define openvt_trivial_usage
  //usage:       "[-c N] [-sw] [PROG ARGS]"
-
+diff --git a/console-tools/showkey.c b/console-tools/showkey.c
+index 5767f20..4dff047 100644
 --- a/console-tools/showkey.c
 +++ b/console-tools/showkey.c
 @@ -14,7 +14,7 @@
@@ -84,7 +91,8 @@
  
  //usage:#define showkey_trivial_usage
  //usage:       "[-a | -k | -s]"
-
+diff --git a/coreutils/hostid.c b/coreutils/hostid.c
+index 0dd18ff..e8aa004 100644
 --- a/coreutils/hostid.c
 +++ b/coreutils/hostid.c
 @@ -15,7 +15,7 @@
@@ -96,7 +104,8 @@
  
  /* BB_AUDIT SUSv3 N/A -- Matches GNU behavior. */
  
-
+diff --git a/coreutils/mkfifo.c b/coreutils/mkfifo.c
+index f48a8e5..2d0c1a6 100644
 --- a/coreutils/mkfifo.c
 +++ b/coreutils/mkfifo.c
 @@ -30,6 +30,12 @@
@@ -112,7 +121,8 @@
  #include "libcoreutils/coreutils.h"
  
  /* This is a NOEXEC applet. Be very careful! */
-
+diff --git a/coreutils/stty.c b/coreutils/stty.c
+index c88ef07..5b8de2b 100644
 --- a/coreutils/stty.c
 +++ b/coreutils/stty.c
 @@ -35,6 +35,44 @@
@@ -160,7 +170,8 @@
  #include "common_bufsiz.h"
  
  #ifndef _POSIX_VDISABLE
-
+diff --git a/e2fsprogs/tune2fs.c b/e2fsprogs/tune2fs.c
+index f7fcd88..d48e1d4 100644
 --- a/e2fsprogs/tune2fs.c
 +++ b/e2fsprogs/tune2fs.c
 @@ -17,7 +17,7 @@
@@ -172,10 +183,11 @@
  
  //usage:#define tune2fs_trivial_usage
  //usage:       "[-c MAX_MOUNT_COUNT] "
-
+diff --git a/include/libbb.h b/include/libbb.h
+index 37f9da5..5195d85 100644
 --- a/include/libbb.h
 +++ b/include/libbb.h
-@@ -608,6 +608,14 @@
+@@ -608,6 +608,14 @@ char *xrealloc_getcwd_or_warn(char *cwd) FAST_FUNC;
  char *xmalloc_follow_symlinks(const char *path) FAST_FUNC RETURNS_MALLOC;
  
  
@@ -190,7 +202,7 @@
  enum {
  	/* bb_signals(BB_FATAL_SIGS, handler) catches all signals which
  	 * otherwise would kill us, except for those resulting from bugs:
-@@ -776,6 +784,7 @@
+@@ -776,6 +784,7 @@ int FAST_FUNC ioloop_run(ioloop_state_t *io);
  /* Useful for having small structure members/global variables */
  typedef int8_t socktype_t;
  typedef int8_t family_t;
@@ -198,7 +210,7 @@
  struct BUG_too_small {
  	char BUG_socktype_t_too_small[(0
  			| SOCK_STREAM
-@@ -799,6 +808,9 @@
+@@ -799,6 +808,9 @@ struct BUG_too_small {
  			/* | AF_IPX */
  			) <= 127 ? 1 : -1];
  };
@@ -208,7 +220,7 @@
  
  
  int xsocket(int domain, int type, int protocol) FAST_FUNC;
-@@ -2471,7 +2483,14 @@
+@@ -2471,7 +2483,14 @@ extern const char bb_path_wtmp_file[] ALIGN1;
  #define bb_path_motd_file "/etc/motd"
  
  #define bb_dev_null "/dev/null"
@@ -223,8 +235,10 @@
  /* allow default system PATH to be extended via CFLAGS */
  #ifndef BB_ADDITIONAL_PATH
  #define BB_ADDITIONAL_PATH ""
-
---- a/include/usage.h
+diff --git a/patched/include/usage.h b/include/usage.h
+new file mode 100644
+index 0000000..6b2b90e
+--- /dev/null
 +++ b/include/usage.h
 @@ -0,0 +1,6736 @@
 +/* DO NOT EDIT. This file is generated from usage.src.h */
@@ -6963,7 +6977,8 @@
 +       "Hello world!\n"
 +
 +#endif
-
+diff --git a/init/bootchartd.c b/init/bootchartd.c
+index a5447c6..38fe8ba 100644
 --- a/init/bootchartd.c
 +++ b/init/bootchartd.c
 @@ -43,7 +43,7 @@
@@ -6975,10 +6990,11 @@
  
  #include "libbb.h"
  #include "common_bufsiz.h"
-
+diff --git a/libbb/Kbuild.src b/libbb/Kbuild.src
+index cb8d2c2..410a52e 100644
 --- a/libbb/Kbuild.src
 +++ b/libbb/Kbuild.src
-@@ -56,12 +56,13 @@
+@@ -56,12 +56,13 @@ lib-y += llist.o
  lib-y += login.o
  lib-y += make_directory.o
  lib-y += makedev.o
@@ -6995,9 +7011,11 @@
  # Alternative (disabled) MD5 implementation
  #lib-y += hash_md5prime.o
  lib-y += messages.o
+diff --git a/libbb/appletlib.c b/libbb/appletlib.c
+index 34b74c3..eb3d50e 100644
 --- a/libbb/appletlib.c
 +++ b/libbb/appletlib.c
-@@ -722,6 +722,9 @@
+@@ -722,6 +722,9 @@ static int find_script_by_name(const char *name)
  	return -1;
  }
  
@@ -7007,14 +7025,7 @@
  int scripted_main(int argc UNUSED_PARAM, char **argv) MAIN_EXTERNALLY_VISIBLE;
  int scripted_main(int argc UNUSED_PARAM, char **argv)
  {
-@@ -1011,6 +1014,6 @@
- 
- # if NUM_SCRIPTS > 0
- /* if SINGLE_APPLET_MAIN, these two functions are simpler: */
- int scripted_main(int argc UNUSED_PARAM, char **argv) MAIN_EXTERNALLY_VISIBLE;
- int scripted_main(int argc UNUSED_PARAM, char **argv)
- {
-@@ -1042,6 +1048,16 @@
+@@ -1042,6 +1045,16 @@ int lbb_main(char **argv)
  int main(int argc UNUSED_PARAM, char **argv)
  #endif
  {
@@ -7031,7 +7042,10 @@
  #if 0
  	/* TODO: find a use for a block of memory between end of .bss
  	 * and end of page. For example, I'm getting "_end:0x812e698 2408 bytes"
---- a/libbb/cosmo_stubs.c
+diff --git a/patched/libbb/cosmo_stubs.c b/libbb/cosmo_stubs.c
+new file mode 100644
+index 0000000..ab10382
+--- /dev/null
 +++ b/libbb/cosmo_stubs.c
 @@ -0,0 +1,436 @@
 +#include <stdio.h>
@@ -7470,9 +7484,11 @@
 +	fputs("unshare: not supported in this build\n", stderr);
 +	return 1;
 +}
+diff --git a/libbb/messages.c b/libbb/messages.c
+index 6914d57..a62e468 100644
 --- a/libbb/messages.c
 +++ b/libbb/messages.c
-@@ -27,7 +27,45 @@
+@@ -27,7 +27,45 @@ const char bb_msg_standard_output[] ALIGN1 = "standard output";
  
  const char bb_hexdigits_upcase[] ALIGN1 = "0123456789ABCDEF";
  
@@ -7518,9 +7534,11 @@
  const char bb_default_login_shell[] ALIGN1 = LIBBB_DEFAULT_LOGIN_SHELL;
  /* util-linux manpage says /sbin:/bin:/usr/sbin:/usr/bin,
   * but I want to save a few bytes here. Check libbb.h before changing! */
+diff --git a/libbb/u_signal_names.c b/libbb/u_signal_names.c
+index f7d598c..da75062 100644
 --- a/libbb/u_signal_names.c
 +++ b/libbb/u_signal_names.c
-@@ -26,7 +26,47 @@
+@@ -26,6 +26,46 @@
  //config:	This behavior matches "kill -l RTMIN+n" from bash.
  
  #include "libbb.h"
@@ -7563,11 +7581,12 @@
 +#define SIGUSR1 10
 +#define SIGUSR2 12
 +#endif
- 
 +
- /* Believe it or not, but some arches have more than 32 SIGs!
- * HPPA: SIGSTKFLT == 36. */
  
+ /* Believe it or not, but some arches have more than 32 SIGs!
+  * HPPA: SIGSTKFLT == 36. */
+diff --git a/miscutils/beep.c b/miscutils/beep.c
+index 724a666..d063d73 100644
 --- a/miscutils/beep.c
 +++ b/miscutils/beep.c
 @@ -30,7 +30,7 @@
@@ -7579,7 +7598,8 @@
  
  //usage:#define beep_trivial_usage
  //usage:       "-f FREQ -l LEN -d DELAY -r COUNT -n"
-
+diff --git a/miscutils/fbsplash.c b/miscutils/fbsplash.c
+index 912a501..73a0b79 100644
 --- a/miscutils/fbsplash.c
 +++ b/miscutils/fbsplash.c
 @@ -43,7 +43,7 @@
@@ -7591,7 +7611,8 @@
  
  //usage:#define fbsplash_trivial_usage
  //usage:       "-s IMGFILE [-c] [-d DEV] [-i INIFILE] [-f CMD]"
-
+diff --git a/miscutils/flash_eraseall.c b/miscutils/flash_eraseall.c
+index c76d9a6..a9e7197 100644
 --- a/miscutils/flash_eraseall.c
 +++ b/miscutils/flash_eraseall.c
 @@ -20,7 +20,7 @@
@@ -7603,7 +7624,8 @@
  
  //usage:#define flash_eraseall_trivial_usage
  //usage:       "[-jNq] MTD_DEVICE"
-
+diff --git a/miscutils/flash_lock_unlock.c b/miscutils/flash_lock_unlock.c
+index 12f72ef..3f457ec 100644
 --- a/miscutils/flash_lock_unlock.c
 +++ b/miscutils/flash_lock_unlock.c
 @@ -23,8 +23,8 @@
@@ -7617,7 +7639,8 @@
  
  //usage:#define flash_lock_trivial_usage
  //usage:       "MTD_DEVICE OFFSET SECTORS"
-
+diff --git a/miscutils/flashcp.c b/miscutils/flashcp.c
+index 93c80cc..6561ad0 100644
 --- a/miscutils/flashcp.c
 +++ b/miscutils/flashcp.c
 @@ -16,7 +16,7 @@
@@ -7629,7 +7652,8 @@
  
  //usage:#define flashcp_trivial_usage
  //usage:       "[-v] FILE MTD_DEVICE"
-
+diff --git a/miscutils/hdparm.c b/miscutils/hdparm.c
+index 8b84471..7c235f6 100644
 --- a/miscutils/hdparm.c
 +++ b/miscutils/hdparm.c
 @@ -70,7 +70,7 @@
@@ -7641,7 +7665,8 @@
  
  //usage:#define hdparm_trivial_usage
  //usage:       "[OPTIONS] [DEVICE]"
-
+diff --git a/miscutils/i2c_tools.c b/miscutils/i2c_tools.c
+index 5f41a72..1f1b111 100644
 --- a/miscutils/i2c_tools.c
 +++ b/miscutils/i2c_tools.c
 @@ -46,11 +46,11 @@
@@ -7661,7 +7686,8 @@
  
  /*
   * Unsupported stuff:
-
+diff --git a/miscutils/mt.c b/miscutils/mt.c
+index c781ef5..dd938ae 100644
 --- a/miscutils/mt.c
 +++ b/miscutils/mt.c
 @@ -12,7 +12,7 @@
@@ -7673,7 +7699,8 @@
  
  //usage:#define mt_trivial_usage
  //usage:       "[-f DEVICE] OPCODE VALUE"
-
+diff --git a/miscutils/nandwrite.c b/miscutils/nandwrite.c
+index 6ac92aa..4ed9b67 100644
 --- a/miscutils/nandwrite.c
 +++ b/miscutils/nandwrite.c
 @@ -22,8 +22,8 @@
@@ -7687,7 +7714,8 @@
  
  //usage:#define nandwrite_trivial_usage
  //usage:	"[-np] [-s ADDR] MTD_DEVICE [FILE]"
-
+diff --git a/miscutils/partprobe.c b/miscutils/partprobe.c
+index b21c624..96be25a 100644
 --- a/miscutils/partprobe.c
 +++ b/miscutils/partprobe.c
 @@ -12,7 +12,7 @@
@@ -7699,7 +7727,8 @@
  
  #include <linux/fs.h>
  #include "libbb.h"
-
+diff --git a/miscutils/raidautorun.c b/miscutils/raidautorun.c
+index 8e70b5a..d31a524 100644
 --- a/miscutils/raidautorun.c
 +++ b/miscutils/raidautorun.c
 @@ -15,7 +15,7 @@
@@ -7711,7 +7740,8 @@
  
  //usage:#define raidautorun_trivial_usage
  //usage:       "DEVICE"
-
+diff --git a/miscutils/readahead.c b/miscutils/readahead.c
+index a9e6726..663d3c9 100644
 --- a/miscutils/readahead.c
 +++ b/miscutils/readahead.c
 @@ -28,7 +28,7 @@
@@ -7723,7 +7753,8 @@
  
  //usage:#define readahead_trivial_usage
  //usage:       "[FILE]..."
-
+diff --git a/miscutils/rfkill.c b/miscutils/rfkill.c
+index 9d91ea8..146f331 100644
 --- a/miscutils/rfkill.c
 +++ b/miscutils/rfkill.c
 @@ -20,7 +20,7 @@
@@ -7735,7 +7766,8 @@
  
  //usage:#define rfkill_trivial_usage
  //usage:       "COMMAND [INDEX|TYPE]"
-
+diff --git a/miscutils/seedrng.c b/miscutils/seedrng.c
+index 7a2331c..9c60477 100644
 --- a/miscutils/seedrng.c
 +++ b/miscutils/seedrng.c
 @@ -29,7 +29,7 @@
@@ -7747,7 +7779,8 @@
  
  //usage:#define seedrng_trivial_usage
  //usage:	"[-d DIR] [-n]"
-
+diff --git a/miscutils/setserial.c b/miscutils/setserial.c
+index 5fb93d2..a91ccfb 100644
 --- a/miscutils/setserial.c
 +++ b/miscutils/setserial.c
 @@ -15,7 +15,7 @@
@@ -7759,7 +7792,8 @@
  
  #include "libbb.h"
  #include <assert.h>
-
+diff --git a/miscutils/ubi_tools.c b/miscutils/ubi_tools.c
+index 8de444e..894a5b5 100644
 --- a/miscutils/ubi_tools.c
 +++ b/miscutils/ubi_tools.c
 @@ -48,12 +48,12 @@
@@ -7781,7 +7815,8 @@
  
  #include "libbb.h"
  /* Some versions of kernel have broken headers, need this hack */
-
+diff --git a/miscutils/ubirename.c b/miscutils/ubirename.c
+index af94354..b3776b8 100644
 --- a/miscutils/ubirename.c
 +++ b/miscutils/ubirename.c
 @@ -15,7 +15,7 @@
@@ -7793,7 +7828,8 @@
  
  //usage:#define ubirename_trivial_usage
  //usage:	"UBI_DEVICE OLD_VOLNAME NEW_VOLNAME [OLD2 NEW2]..."
-
+diff --git a/networking/arp.c b/networking/arp.c
+index 16783ab..3758fed 100644
 --- a/networking/arp.c
 +++ b/networking/arp.c
 @@ -20,7 +20,7 @@
@@ -7805,7 +7841,8 @@
  
  //usage:#define arp_trivial_usage
  //usage:     "\n[-vn]	[-H HWTYPE] [-i IF] -a [HOSTNAME]"
-
+diff --git a/networking/brctl.c b/networking/brctl.c
+index 0f8dc2f..6d11693 100644
 --- a/networking/brctl.c
 +++ b/networking/brctl.c
 @@ -37,7 +37,7 @@
@@ -7817,7 +7854,8 @@
  
  //usage:#define brctl_trivial_usage
  //usage:       "COMMAND [BRIDGE [ARGS]]"
-
+diff --git a/networking/ether-wake.c b/networking/ether-wake.c
+index 68df193..161e0e9 100644
 --- a/networking/ether-wake.c
 +++ b/networking/ether-wake.c
 @@ -71,7 +71,7 @@
@@ -7829,7 +7867,8 @@
  
  //usage:#define ether_wake_trivial_usage
  //usage:       "[-b] [-i IFACE] [-p aa:bb:cc:dd[:ee:ff]/a.b.c.d] MAC"
-
+diff --git a/networking/hostname.c b/networking/hostname.c
+index 101b89e..0d5da98 100644
 --- a/networking/hostname.c
 +++ b/networking/hostname.c
 @@ -25,8 +25,8 @@
@@ -7843,7 +7882,8 @@
  
  //usage:#define hostname_trivial_usage
  //usage:       "[-sidf] [HOSTNAME | -F FILE]"
-
+diff --git a/networking/ifupdown.c b/networking/ifupdown.c
+index 6832ee0..e7e8140 100644
 --- a/networking/ifupdown.c
 +++ b/networking/ifupdown.c
 @@ -109,8 +109,8 @@
@@ -7857,7 +7897,8 @@
  
  //usage:#define ifup_trivial_usage
  //usage:       "[-n"IF_FEATURE_IFUPDOWN_MAPPING("m")"vf] [-i FILE] -a | IFACE..."
-
+diff --git a/networking/nameif.c b/networking/nameif.c
+index 461745c..6d3c8f9 100644
 --- a/networking/nameif.c
 +++ b/networking/nameif.c
 @@ -40,7 +40,7 @@
@@ -7869,7 +7910,8 @@
  
  //usage:#define nameif_trivial_usage
  //usage:	IF_NOT_FEATURE_NAMEIF_EXTENDED(
-
+diff --git a/networking/nbd-client.c b/networking/nbd-client.c
+index 4fda661..833c965 100644
 --- a/networking/nbd-client.c
 +++ b/networking/nbd-client.c
 @@ -11,7 +11,7 @@
@@ -7881,7 +7923,8 @@
  
  #include "libbb.h"
  #include <netinet/tcp.h>
-
+diff --git a/networking/ntpd.c b/networking/ntpd.c
+index 595000b..fb4e604 100644
 --- a/networking/ntpd.c
 +++ b/networking/ntpd.c
 @@ -69,7 +69,7 @@
@@ -7893,7 +7936,8 @@
  
  //usage:#define ntpd_trivial_usage
  //usage:	"[-dnqNw"IF_FEATURE_NTPD_SERVER("l] [-I IFACE")"] [-S PROG]"
-
+diff --git a/networking/tc.c b/networking/tc.c
+index 3a79fd2..4faa2a8 100644
 --- a/networking/tc.c
 +++ b/networking/tc.c
 @@ -19,7 +19,7 @@
@@ -7905,7 +7949,8 @@
  
  //usage:#define tc_trivial_usage
  /* //usage: "[OPTIONS] OBJECT CMD [dev STRING]" */
-
+diff --git a/networking/telnet.c b/networking/telnet.c
+index 227a379..8688f5b 100644
 --- a/networking/telnet.c
 +++ b/networking/telnet.c
 @@ -50,7 +50,7 @@
@@ -7917,7 +7962,8 @@
  
  //usage:#define telnet_trivial_usage
  //usage:	IF_FEATURE_TELNET_AUTOLOGIN("[-a] [-l USER] ")"HOST [PORT]"
-
+diff --git a/networking/telnetd.c b/networking/telnetd.c
+index 880d3c6..4d15b37 100644
 --- a/networking/telnetd.c
 +++ b/networking/telnetd.c
 @@ -105,7 +105,7 @@
@@ -7929,10 +7975,11 @@
  
  //usage:#define telnetd_trivial_usage
  //usage:       "[OPTIONS]"
-
+diff --git a/networking/tls.c b/networking/tls.c
+index a756420..fac5c5a 100644
 --- a/networking/tls.c
 +++ b/networking/tls.c
-@@ -2450,7 +2450,7 @@
+@@ -2450,7 +2450,7 @@ static void get_client_hello(tls_state_t *tls)
  	) {
  		bad_record_die(tls, "'client hello'", len);
  	}
@@ -7941,7 +7988,8 @@
  
  	/* Save client random */
  	memcpy(tls->hsd->client_and_server_rand32, hp->rand32, 32);
-
+diff --git a/networking/traceroute.c b/networking/traceroute.c
+index 767f537..5287f3d 100644
 --- a/networking/traceroute.c
 +++ b/networking/traceroute.c
 @@ -239,8 +239,8 @@
@@ -7955,7 +8003,8 @@
  
  //usage:#define traceroute_trivial_usage
  //usage:       "[-"IF_TRACEROUTE6("46")IF_FEATURE_TRACEROUTE_USE_ICMP("I")"Flnrv] [-f 1ST_TTL] [-m MAXTTL] [-q PROBES] [-p PORT]\n"
-
+diff --git a/networking/tunctl.c b/networking/tunctl.c
+index c17302e..8706217 100644
 --- a/networking/tunctl.c
 +++ b/networking/tunctl.c
 @@ -25,7 +25,7 @@
@@ -7967,10 +8016,11 @@
  
  //usage:#define tunctl_trivial_usage
  //usage:       "[-f DEVICE] [-t NAME | -d NAME]" IF_FEATURE_TUNCTL_UG(" [-u USER] [-g GRP] [-b]")
-
+diff --git a/networking/wget.c b/networking/wget.c
+index ec37677..22c87a6 100644
 --- a/networking/wget.c
 +++ b/networking/wget.c
-@@ -1188,8 +1188,11 @@
+@@ -1188,8 +1188,11 @@ static void download_one_url(const char *url)
  		int status;
  
  		/* Open socket to http(s) server */
@@ -7984,7 +8034,8 @@
  		if (server.protocol == P_HTTPS) {
  			/* openssl-based helper
  			 * Inconvenient API since we can't give it an open fd
-
+diff --git a/networking/zcip.c b/networking/zcip.c
+index 137d46e..ffa1cf6 100644
 --- a/networking/zcip.c
 +++ b/networking/zcip.c
 @@ -27,7 +27,7 @@
@@ -7996,7 +8047,8 @@
  
  //#define DEBUG
  
-
+diff --git a/procps/ps.c b/procps/ps.c
+index 5b521ae..ffe56ba 100644
 --- a/procps/ps.c
 +++ b/procps/ps.c
 @@ -109,6 +109,47 @@
@@ -8047,7 +8099,7 @@
  #include "common_bufsiz.h"
  #ifdef __linux__
  # include <sys/sysinfo.h>
-@@ -551,6 +590,29 @@
+@@ -551,6 +592,29 @@ static void format_process(const procps_status_t *ps)
  int ps_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
  int ps_main(int argc UNUSED_PARAM, char **argv)
  {
@@ -8077,6 +8129,8 @@
  	procps_status_t *p;
  	llist_t* opt_o = NULL;
  	char default_o[sizeof(DEFAULT_O_STR)];
+diff --git a/procps/uptime.c b/procps/uptime.c
+index aec7bd7..32ec30e 100644
 --- a/procps/uptime.c
 +++ b/procps/uptime.c
 @@ -28,7 +28,7 @@
@@ -8088,10 +8142,11 @@
  
  //usage:#define uptime_trivial_usage
  //usage:       ""
-
+diff --git a/runit/runsv.c b/runit/runsv.c
+index df7c59a..27d30cc 100644
 --- a/runit/runsv.c
 +++ b/runit/runsv.c
-@@ -45,6 +45,12 @@
+@@ -45,6 +45,12 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  
  #include <sys/file.h>
  #include "libbb.h"
@@ -8104,10 +8159,11 @@
  #include "common_bufsiz.h"
  #include "runit_lib.h"
  
-
+diff --git a/scripts/Makefile.IMA b/scripts/Makefile.IMA
+index 1e30058..cc347c7 100644
 --- a/scripts/Makefile.IMA
 +++ b/scripts/Makefile.IMA
-@@ -40,7 +40,7 @@
+@@ -40,7 +40,7 @@ HOSTCC = cc
  endif
  AS              = $(CROSS_COMPILE)as
  CC              = $(CROSS_COMPILE)gcc
@@ -8116,10 +8172,11 @@
  CPP             = $(CC) -E
  AR              = $(CROSS_COMPILE)ar
  NM              = $(CROSS_COMPILE)nm
-
+diff --git a/scripts/Makefile.build b/scripts/Makefile.build
+index 5eac45f..5dea130 100644
 --- a/scripts/Makefile.build
 +++ b/scripts/Makefile.build
-@@ -257,7 +257,7 @@
+@@ -257,7 +257,7 @@ quiet_cmd_link_o_target = LD      $@
  # If the list of objects to link is empty, just create an empty built-in.o
  # -nostdlib is added to make "make LD=gcc ..." work (some people use that)
  cmd_link_o_target = $(if $(strip $(obj-y)),\
@@ -8128,14 +8185,13 @@
  		rm -f $@; $(AR) rcs $@)
  
  $(builtin-target): $(obj-y) FORCE
-
+diff --git a/shell/ash.c b/shell/ash.c
+index fb887f3..4ddda4e 100644
 --- a/shell/ash.c
 +++ b/shell/ash.c
-@@ -6103,7 +6103,54 @@
- 	while (redirlist != stop)
- 		popredir(/*drop:*/ 0);
+@@ -6105,6 +6105,53 @@ unwindredir(struct redirtab *stop)
  }
-+
+ 
  
 +#if defined(__COSMOPOLITAN__)
 +#include <alloca.h>
@@ -8183,10 +8239,11 @@
 +	}
 +}
 +#endif
- 
++
  /*
   * execve wrappers
-@@ -6164,6 +6206,11 @@
+  */
+@@ -6164,6 +6211,11 @@ tryexec_applet(int applet_no, const char *cmd, char **argv, char **envp)
  	}
  	/* re-exec ourselves with the new arguments */
  	execve(bb_busybox_exec_path, argv, envp);
@@ -8198,7 +8255,7 @@
  	/* If they called chroot or otherwise made the binary
  	 * no longer executable, return.
  	 */
-@@ -6182,6 +6229,11 @@
+@@ -6182,6 +6234,11 @@ tryexec(const char *cmd, char **argv, char **envp)
  	execve(cmd, argv, envp);
  #endif
  	if (cmd != bb_busybox_exec_path && errno == ENOEXEC) {
@@ -8210,7 +8267,7 @@
  		/* Run "cmd" as a shell script:
  		 * http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html
  		 * "If the execve() function fails with ENOEXEC, the shell
-@@ -6273,9 +6325,16 @@
+@@ -6273,9 +6330,16 @@ vforkexec(union node *n, char **argv, const char *path, int idx)
  	jp = makejob(1);
  
  	sigblockall(NULL);
@@ -8227,7 +8284,7 @@
  
  	if (!pid) {
  		forkchild(jp, n, FORK_FG);
-@@ -6283,8 +6342,9 @@
+@@ -6283,8 +6347,9 @@ vforkexec(union node *n, char **argv, const char *path, int idx)
  		shellexec(argv[0], argv, path, idx);
  		/* NOTREACHED */
  	}
@@ -8238,10 +8295,11 @@
  	sigclearmask();
  	forkparent(jp, n, FORK_FG, pid);
  
-
+diff --git a/shell/hush.c b/shell/hush.c
+index dcc6b22..3accc72 100644
 --- a/shell/hush.c
 +++ b/shell/hush.c
-@@ -2073,7 +2073,28 @@
+@@ -2073,7 +2073,28 @@ enum {
  		| (1 << SIGINT)
  		| (1 << SIGHUP)
  		,
@@ -8271,7 +8329,8 @@
  #if ENABLE_HUSH_JOB
  		| (1 << SIGTTIN)
  		| (1 << SIGTTOU)
-
+diff --git a/sysklogd/klogd.c b/sysklogd/klogd.c
+index d4f2c0c..5b5c1cf 100644
 --- a/sysklogd/klogd.c
 +++ b/sysklogd/klogd.c
 @@ -47,7 +47,7 @@
@@ -8283,7 +8342,8 @@
  
  //usage:#define klogd_trivial_usage
  //usage:       "[-c N] [-n]"
-
+diff --git a/sysklogd/logger.c b/sysklogd/logger.c
+index b99e8af..fc22fbe 100644
 --- a/sysklogd/logger.c
 +++ b/sysklogd/logger.c
 @@ -18,7 +18,7 @@
@@ -8295,7 +8355,8 @@
  
  //usage:#define logger_trivial_usage
  //usage:       "[-s] [-t TAG] [-p PRIO] [MESSAGE]"
-
+diff --git a/sysklogd/logread.c b/sysklogd/logread.c
+index 632346d..23dd05c 100644
 --- a/sysklogd/logread.c
 +++ b/sysklogd/logread.c
 @@ -33,7 +33,7 @@
@@ -8307,7 +8368,8 @@
  
  //usage:#define logread_trivial_usage
  //usage:       "[-fF]"
-
+diff --git a/sysklogd/syslogd.c b/sysklogd/syslogd.c
+index 2cbb22b..785529f 100644
 --- a/sysklogd/syslogd.c
 +++ b/sysklogd/syslogd.c
 @@ -119,7 +119,7 @@
@@ -8319,7 +8381,8 @@
  
  //usage:#define syslogd_trivial_usage
  //usage:       "[OPTIONS]"
-
+diff --git a/util-linux/acpid.c b/util-linux/acpid.c
+index 386b988..5e16723 100644
 --- a/util-linux/acpid.c
 +++ b/util-linux/acpid.c
 @@ -30,7 +30,7 @@
@@ -8331,7 +8394,8 @@
  
  //usage:#define acpid_trivial_usage
  //usage:       "[-df] [-c CONFDIR] [-l LOGFILE] [-a ACTIONFILE] [-M MAPFILE] [-e PROC_EVENT_FILE] [-p PIDFILE]"
-
+diff --git a/util-linux/blkdiscard.c b/util-linux/blkdiscard.c
+index 38c563b..90dbb89 100644
 --- a/util-linux/blkdiscard.c
 +++ b/util-linux/blkdiscard.c
 @@ -13,7 +13,7 @@
@@ -8343,7 +8407,8 @@
  
  //usage:#define blkdiscard_trivial_usage
  //usage:       "[-o OFS] [-l LEN] [-s] DEVICE"
-
+diff --git a/util-linux/blockdev.c b/util-linux/blockdev.c
+index 606f0c1..fe42211 100644
 --- a/util-linux/blockdev.c
 +++ b/util-linux/blockdev.c
 @@ -13,7 +13,7 @@
@@ -8355,7 +8420,8 @@
  
  //usage:#define blockdev_trivial_usage
  //usage:	"OPTION BLOCKDEV"
-
+diff --git a/util-linux/dmesg.c b/util-linux/dmesg.c
+index 39eecc3..ce2afbb 100644
 --- a/util-linux/dmesg.c
 +++ b/util-linux/dmesg.c
 @@ -43,7 +43,7 @@
@@ -8367,7 +8433,8 @@
  
  //usage:#define dmesg_trivial_usage
  //usage:       "[-cr] [-n LEVEL] [-s SIZE]"
-
+diff --git a/util-linux/eject.c b/util-linux/eject.c
+index 4fa6dbd..bd9b92d 100644
 --- a/util-linux/eject.c
 +++ b/util-linux/eject.c
 @@ -28,7 +28,7 @@
@@ -8379,7 +8446,8 @@
  
  //usage:#define eject_trivial_usage
  //usage:       IF_FEATURE_EJECT_SCSI("[-s] ") "[-t] [-T] [DEVICE]"
-
+diff --git a/util-linux/fallocate.c b/util-linux/fallocate.c
+index d5c2589..342d37f 100644
 --- a/util-linux/fallocate.c
 +++ b/util-linux/fallocate.c
 @@ -12,7 +12,7 @@
@@ -8391,7 +8459,8 @@
  
  //usage:#define fallocate_trivial_usage
  //usage:       "[-o OFS] -l LEN FILE"
-
+diff --git a/util-linux/fdisk.c b/util-linux/fdisk.c
+index 1de73dd..172d7d4 100644
 --- a/util-linux/fdisk.c
 +++ b/util-linux/fdisk.c
 @@ -89,7 +89,7 @@
@@ -8403,7 +8472,8 @@
  
  //usage:#define fdisk_trivial_usage
  //usage:       "[-ul" IF_FEATURE_FDISK_BLKSIZE("s") "] "
-
+diff --git a/util-linux/freeramdisk.c b/util-linux/freeramdisk.c
+index 88f50c5..fe6db14 100644
 --- a/util-linux/freeramdisk.c
 +++ b/util-linux/freeramdisk.c
 @@ -35,8 +35,8 @@
@@ -8417,7 +8487,8 @@
  
  //usage:#define freeramdisk_trivial_usage
  //usage:       "DEVICE"
-
+diff --git a/util-linux/fsfreeze.c b/util-linux/fsfreeze.c
+index 66b6fd0..219e8b9 100644
 --- a/util-linux/fsfreeze.c
 +++ b/util-linux/fsfreeze.c
 @@ -13,7 +13,7 @@
@@ -8429,7 +8500,8 @@
  
  //usage:#define fsfreeze_trivial_usage
  //usage:       "--[un]freeze MOUNTPOINT"
-
+diff --git a/util-linux/fstrim.c b/util-linux/fstrim.c
+index c28e672..28b3041 100644
 --- a/util-linux/fstrim.c
 +++ b/util-linux/fstrim.c
 @@ -15,7 +15,7 @@
@@ -8441,7 +8513,8 @@
  
  //usage:#define fstrim_trivial_usage
  //usage:       "[OPTIONS] MOUNTPOINT"
-
+diff --git a/util-linux/ionice.c b/util-linux/ionice.c
+index b768c83..989b971 100644
 --- a/util-linux/ionice.c
 +++ b/util-linux/ionice.c
 @@ -15,7 +15,7 @@
@@ -8453,7 +8526,8 @@
  
  //usage:#define ionice_trivial_usage
  //usage:	"[-c 1-3] [-n 0-7] [-t] { -p PID | PROG ARGS }"
-
+diff --git a/util-linux/ipcrm.c b/util-linux/ipcrm.c
+index 126221c..6ff7e02 100644
 --- a/util-linux/ipcrm.c
 +++ b/util-linux/ipcrm.c
 @@ -17,7 +17,7 @@
@@ -8465,7 +8539,8 @@
  
  #include "libbb.h"
  
-
+diff --git a/util-linux/ipcs.c b/util-linux/ipcs.c
+index f0e5c5a..e38adc2 100644
 --- a/util-linux/ipcs.c
 +++ b/util-linux/ipcs.c
 @@ -16,7 +16,7 @@
@@ -8477,7 +8552,8 @@
  
  /* X/OPEN tells us to use <sys/{types,ipc,sem}.h> for semctl() */
  /* X/OPEN tells us to use <sys/{types,ipc,msg}.h> for msgctl() */
-
+diff --git a/util-linux/mkfs_ext2.c b/util-linux/mkfs_ext2.c
+index fcf374b..1ebda24 100644
 --- a/util-linux/mkfs_ext2.c
 +++ b/util-linux/mkfs_ext2.c
 @@ -24,8 +24,8 @@
@@ -8491,7 +8567,8 @@
  
  //usage:#define mkfs_ext2_trivial_usage
  //usage:       "[-Fn] "
-
+diff --git a/util-linux/mkfs_reiser.c b/util-linux/mkfs_reiser.c
+index 44a7431..cc39743 100644
 --- a/util-linux/mkfs_reiser.c
 +++ b/util-linux/mkfs_reiser.c
 @@ -15,7 +15,7 @@
@@ -8503,7 +8580,8 @@
  
  //usage:#define mkfs_reiser_trivial_usage
  //usage:       "[-f] [-l LABEL] BLOCKDEV [4K-BLOCKS]"
-
+diff --git a/util-linux/mkfs_vfat.c b/util-linux/mkfs_vfat.c
+index 7ae4fd5..6784fe3 100644
 --- a/util-linux/mkfs_vfat.c
 +++ b/util-linux/mkfs_vfat.c
 @@ -23,8 +23,8 @@
@@ -8517,7 +8595,8 @@
  
  //usage:#define mkfs_vfat_trivial_usage
  //usage:       "[-v] [-n LABEL] BLOCKDEV [KBYTES]"
-
+diff --git a/util-linux/nsenter.c b/util-linux/nsenter.c
+index 425d517..5c07a6b 100644
 --- a/util-linux/nsenter.c
 +++ b/util-linux/nsenter.c
 @@ -14,7 +14,7 @@
@@ -8529,7 +8608,8 @@
  
  //usage:#define nsenter_trivial_usage
  //usage:       "[OPTIONS] [PROG ARGS]"
-
+diff --git a/util-linux/setarch.c b/util-linux/setarch.c
+index 68b7c66..7c270dd 100644
 --- a/util-linux/setarch.c
 +++ b/util-linux/setarch.c
 @@ -32,9 +32,9 @@
@@ -8545,7 +8625,8 @@
  
  //usage:#define setarch_trivial_usage
  //usage:       "PERSONALITY [-R] PROG ARGS"
-
+diff --git a/util-linux/setpriv.c b/util-linux/setpriv.c
+index ee03851..544c8ff 100644
 --- a/util-linux/setpriv.c
 +++ b/util-linux/setpriv.c
 @@ -44,7 +44,7 @@
@@ -8557,7 +8638,8 @@
  
  //usage:#define setpriv_trivial_usage
  //usage:	"[OPTIONS] PROG ARGS"
-
+diff --git a/util-linux/swaponoff.c b/util-linux/swaponoff.c
+index e2ff4b5..0453dc7 100644
 --- a/util-linux/swaponoff.c
 +++ b/util-linux/swaponoff.c
 @@ -49,8 +49,8 @@
@@ -8571,7 +8653,8 @@
  
  //usage:#define swapon_trivial_usage
  //usage:       "[-a] [-e]" IF_FEATURE_SWAPON_DISCARD(" [-d[POL]]") IF_FEATURE_SWAPON_PRI(" [-p PRI]") " [DEVICE]"
-
+diff --git a/util-linux/umount.c b/util-linux/umount.c
+index f5c97a0..e45af47 100644
 --- a/util-linux/umount.c
 +++ b/util-linux/umount.c
 @@ -38,7 +38,7 @@
@@ -8583,7 +8666,8 @@
  
  //usage:#define umount_trivial_usage
  //usage:       "[-rlf"IF_FEATURE_MTAB_SUPPORT("m")IF_FEATURE_MOUNT_LOOP("d")IF_FEATURE_UMOUNT_ALL("a")"] [-t FSTYPE] FILESYSTEM|DIRECTORY"
-
+diff --git a/util-linux/unshare.c b/util-linux/unshare.c
+index f58cdd9..f4ac6f2 100644
 --- a/util-linux/unshare.c
 +++ b/util-linux/unshare.c
 @@ -20,7 +20,7 @@
