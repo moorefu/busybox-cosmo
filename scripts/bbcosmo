@@ -1,0 +1,138 @@
+#!/bin/sh
+# busybox-cosmo 运行诊断与能力报告入口
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/lib/portable.sh" ]; then
+	HERE="$SCRIPT_DIR"
+else
+	HERE="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+fi
+. "$HERE/lib/portable.sh" || exit 2
+
+usage() {
+	cat >&2 <<'EOF'
+用法:
+  bbcosmo capabilities [--format text|shell|json]
+  bbcosmo doctor
+  bbcosmo run <busybox 参数...>
+环境:
+  BBP_BUSYBOX=路径       指定发行包 launcher 或 busybox 二进制
+  BBP_XZ_ENCODER=路径    指定可验证的外部 xz 编码器
+EOF
+}
+
+bbcosmo_json_escape() {
+	printf '%s' "$1" | bbp sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+bbcosmo_emit() {
+	bbcosmo_emit_name=$1
+	bbcosmo_emit_value=$2
+	case "$bbcosmo_format" in
+		json)
+			[ "$bbcosmo_json_first" = 1 ] || printf ',\n'
+			printf '  "%s": "%s"' \
+				"$(bbcosmo_json_escape "$bbcosmo_emit_name")" \
+				"$(bbcosmo_json_escape "$bbcosmo_emit_value")"
+			bbcosmo_json_first=0
+			;;
+		shell) printf '%s=%s\n' "$bbcosmo_emit_name" "$bbcosmo_emit_value" ;;
+		text) printf '%-32s %s\n' "$bbcosmo_emit_name" "$bbcosmo_emit_value" ;;
+	esac
+}
+
+bbcosmo_capability() {
+	bbcosmo_cap_name=$1
+	shift
+	if "$@" >/dev/null 2>&1; then
+		bbcosmo_emit "$bbcosmo_cap_name" available
+	else
+		bbcosmo_emit "$bbcosmo_cap_name" unavailable
+	fi
+}
+
+capabilities() {
+	bbcosmo_format=text
+	if [ "${1:-}" = --format ]; then
+		bbcosmo_format=${2:-text}
+		shift 2
+	fi
+	[ "$#" -eq 0 ] || { printf '%s\n' 'capabilities 不接受额外参数' >&2; return 2; }
+	case "$bbcosmo_format" in
+		text|shell) ;;
+		json) bbcosmo_json_first=1; printf '{\n' ;;
+		*) printf '%s\n' "不支持的格式: $bbcosmo_format" >&2; return 2 ;;
+	esac
+	bbcosmo_entry_rc=0
+	[ "$bbcosmo_format" = text ] && printf '%s\n' '# busybox-cosmo capabilities'
+	if bbp --list >/dev/null 2>&1; then
+		bbcosmo_emit busybox.entry available
+	else
+		bbcosmo_emit busybox.entry unavailable
+		bbcosmo_entry_rc=1
+	fi
+	bbcosmo_emit platform.os "$(bbp_os)"
+	bbcosmo_emit platform.arch "$(bbp_arch)"
+	bbcosmo_emit busybox.path "$BBP_BUSYBOX"
+	for bbcosmo_applet in sh ash printf test awk sed grep tar gzip gunzip bzip2 xz stty; do
+		if bbp_have "$bbcosmo_applet"; then
+			bbcosmo_emit "applet.$bbcosmo_applet" available
+		else
+			bbcosmo_emit "applet.$bbcosmo_applet" unavailable
+		fi
+	done
+	bbcosmo_capability tty.input bbp_is_tty
+	bbcosmo_capability tty.size bbp_term_size
+	bbcosmo_capability tty.ansi bbp_ansi_available
+	bbcosmo_capability archive.xz.encode bbp_xz_encode_available
+	bbcosmo_xz_encoder=$(bbp_external_xz 2>/dev/null || true)
+	[ -n "$bbcosmo_xz_encoder" ] || bbcosmo_xz_encoder=none
+	bbcosmo_emit archive.xz.encoder "$bbcosmo_xz_encoder"
+	if [ -n "${BBP_HTTPS_GET:-}" ] && [ -x "$BBP_HTTPS_GET" ]; then
+		bbcosmo_emit network.https.peer_verified configured-unverified
+	else
+		bbcosmo_emit network.https.peer_verified unverified
+	fi
+	if bbp_tmpdir >/dev/null 2>&1; then
+		bbcosmo_emit filesystem.temp available
+	else
+		bbcosmo_emit filesystem.temp unavailable
+	fi
+	[ "$bbcosmo_format" = json ] && printf '\n}\n'
+	return "${bbcosmo_entry_rc:-0}"
+}
+
+doctor() {
+	bbcosmo_fail=0
+	printf '%s\n' 'busybox-cosmo 运行诊断'
+	printf '入口: %s\n' "$BBP_BUSYBOX"
+	if [ -x "$BBP_BUSYBOX" ]; then
+		printf '%s\n' '入口可执行: 是'
+	else
+		printf '%s\n' '入口可执行: 否'
+		bbcosmo_fail=1
+	fi
+	if bbp_have sh && bbp_have printf && bbp_have test; then
+		printf '%s\n' 'portable-core: 可用'
+	else
+		printf '%s\n' 'portable-core: 缺少 sh/printf/test'
+		bbcosmo_fail=1
+	fi
+	printf 'UI 模式: %s\n' "$(bbp_ui_mode)"
+	if bbp_xz_encode_available; then
+		printf '%s\n' 'xz 创建: 可用（已完成编码/解码往返）'
+	else
+		printf '%s\n' 'xz 创建: 不可用或未配置外部编码器'
+	fi
+	printf '%s\n' 'HTTPS 对端证书: 当前内置 TLS 不提供验证；请配置 BBP_HTTPS_GET'
+	printf '%s\n' '提示: 详细平台限制见 docs/KNOWN-LIMITATIONS.md'
+	return "$bbcosmo_fail"
+}
+
+case "${1:-}" in
+	capabilities) shift; capabilities "$@" ;;
+	doctor) shift; doctor "$@" ;;
+	run) shift; [ "$#" -gt 0 ] || { usage; exit 2; }; bbp "$@" ;;
+	-h|--help|help) usage ;;
+	*) usage; exit 2 ;;
+esac

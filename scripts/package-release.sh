@@ -29,6 +29,10 @@ if [ "$MODE" = "--min" ]; then
   chmod 755 "$MIN_OUT/busybox.com"
   "$ROOT/scripts/check-ape-64k.sh" "$MIN_OUT/busybox.com" >/dev/null || die "min busybox.com 64K 自检失败 (内嵌 loader 非 64K 对齐?)"
   cp "$ROOT/scripts/bb.sh" "$MIN_OUT/busybox" && chmod 755 "$MIN_OUT/busybox"
+  mkdir -p "$MIN_OUT/lib" "$MIN_OUT/examples"
+  cp "$ROOT/lib/portable.sh" "$MIN_OUT/lib/portable.sh"
+  cp "$ROOT/scripts/bbcosmo" "$MIN_OUT/bbcosmo" && chmod 755 "$MIN_OUT/bbcosmo"
+  cp "$ROOT/examples/portable-menu.sh" "$MIN_OUT/examples/portable-menu.sh" && chmod 755 "$MIN_OUT/examples/portable-menu.sh"
   cp "$LOADERS/ape-loader-aarch64" "$LOADERS/ape-loader-x86_64" "$MIN_OUT/" 2>/dev/null || true
   # mac loader (Apple Silicon 真机免 cc 自举用; x86_64 mac 走内置 --assimilate)
   cp "$LOADERS/ape-loader-macos-arm64" "$LOADERS/ape-loader-macos-x86_64" "$MIN_OUT/" 2>/dev/null || true
@@ -47,6 +51,8 @@ busybox-cosmo 最小发布包 (fat 单文件)
                    Linux: 无 binfmt 时退 loader 形态 (自备 ~/.ape-1.10 或
                            --setup-linux 后嵌套 exec 亦全功能)
   ape-loader-*     --setup-linux 用 (aarch64/x86_64) + mac 免 cc (macos-arm64/x86_64)
+  bbcosmo/lib/     诊断、能力报告与可移植 Shell 基础库
+  examples/        行式/非交互菜单示例
   README.txt       本说明
 
 用法:
@@ -65,7 +71,7 @@ cache: $BUSYBOX_COSMO_CACHE → $XDG_CACHE_HOME/busybox-cosmo → ~/.cache/busyb
 全功能替代: mac x86_64 自同化, Linux sudo ./busybox --setup-linux。
 EOF
   rm -f "$DIST_DIR/busybox-min.zip"
-  ( cd "$MIN_OUT" && zip -X -q "$DIST_DIR/busybox-min.zip" busybox.com busybox \
+  ( cd "$MIN_OUT" && zip -X -q -r "$DIST_DIR/busybox-min.zip" busybox.com busybox bbcosmo lib examples \
       ape-loader-aarch64 ape-loader-x86_64 \
       ape-loader-macos-arm64 ape-loader-macos-x86_64 README.txt )
   echo "最小包完成: $DIST_DIR/busybox-min.zip"
@@ -101,10 +107,16 @@ cp "$ROOT/tests/smoke.sh" "$ROOT/tests/deep-test.sh" "$ROOT/tests/smoke-test.bat
 cp "$ROOT/scripts/bb.sh" "$OUT/release/busybox" && chmod 755 "$OUT/release/busybox"
 cp "$ROOT/tests/smoke-full.sh" "$OUT/release/smoke-full.sh" 2>/dev/null || true
 cp "$ROOT/install.sh" "$OUT/release/install.sh" && chmod 755 "$OUT/release/install.sh"
+mkdir -p "$OUT/release/lib" "$OUT/release/examples"
+cp "$ROOT/lib/portable.sh" "$OUT/release/lib/portable.sh"
+cp "$ROOT/scripts/bbcosmo" "$OUT/release/bbcosmo" && chmod 755 "$OUT/release/bbcosmo"
+cp "$ROOT/examples/portable-menu.sh" "$OUT/release/examples/portable-menu.sh" && chmod 755 "$OUT/release/examples/portable-menu.sh"
+cp "$ROOT/tests/portable-contract.sh" "$OUT/release/portable-contract.sh"
 cp "$ROOT/docs/PROJECT-HISTORY.md" "$OUT/release/PROJECT-HISTORY.md" 2>/dev/null || true
 cp "$ROOT/docs/VERIFICATION-MATRIX.md" "$OUT/release/VERIFICATION-MATRIX.md" 2>/dev/null || true
 cp "$ROOT/docs/RUN-NO-SELF-MODIFY.md" "$OUT/release/RUN-NO-SELF-MODIFY.md" 2>/dev/null || true
 cp "$ROOT/docs/KNOWN-LIMITATIONS.md" "$ROOT/docs/REMEDIATION-PLAN.md" "$ROOT/docs/COSMO-ABI-CONTRACTS.md" "$OUT/release/" 2>/dev/null || true
+cp "$ROOT/docs/PORTABLE-RUNTIME-PLAN.md" "$OUT/release/" 2>/dev/null || true
 cp "$ROOT/NOTICE.md" "$OUT/release/NOTICE.md" 2>/dev/null || true
 cp "$ROOT/src/busybox-$BB_VER/LICENSE" "$OUT/release/BUSYBOX-LICENSE" 2>/dev/null || true
 
@@ -133,6 +145,10 @@ busybox-$BB_VER cosmopolitan 发布包 ($BUILD_DATE, 本工程可复现构建)
   assimilate                 原生转换工具(install.sh 用其生成全功能原生副本)
   install.sh                 统一跨平台安装器 (loader/binfmt/cache 策略)
   busybox                    零安装 launcher (同目录直跑: 自动 cache+原生副本)
+  bbcosmo                    运行诊断与能力报告入口
+  lib/portable.sh            跨平台 Shell 基础库
+  examples/portable-menu.sh 行式/非交互菜单示例
+  portable-contract.sh       兼容库契约测试
   smoke.sh/deep-test.sh      测试(各平台: busybox sh smoke.sh)
   smoke-test.bat             Windows 冒烟
   md5sums.txt                校验清单
@@ -152,8 +168,20 @@ busybox-$BB_VER cosmopolitan 发布包 ($BUILD_DATE, 本工程可复现构建)
   4. 顶层命令/单测可直接 ./busybox-x86_64.ape sh smoke-full.sh(loader 形态可跑多数项)。
 EOF
 echo "=== 6. 校验清单与打包 zip ==="
-( cd "$OUT/release" && { md5 * > md5sums.txt 2>/dev/null || md5sum * > md5sums.txt; } )
-( cd "$OUT/release" && sha256sum * > SHA256SUMS 2>/dev/null || shasum -a 256 * > SHA256SUMS )
+( cd "$OUT/release" && {
+    if command -v md5 >/dev/null 2>&1; then
+      find . -type f ! -name md5sums.txt ! -name SHA256SUMS -exec md5 {} + > md5sums.txt
+    else
+      find . -type f ! -name md5sums.txt ! -name SHA256SUMS -exec md5sum {} + > md5sums.txt
+    fi
+  } )
+( cd "$OUT/release" && {
+    if command -v sha256sum >/dev/null 2>&1; then
+      find . -type f ! -name md5sums.txt ! -name SHA256SUMS -exec sha256sum {} + > SHA256SUMS
+    else
+      find . -type f ! -name md5sums.txt ! -name SHA256SUMS -exec shasum -a 256 {} + > SHA256SUMS
+    fi
+  } )
 rm -f "$DIST_DIR/busybox-cosmo-release.zip"
 ( cd "$OUT" && zip -X -qr "$DIST_DIR/busybox-cosmo-release.zip" release )
 

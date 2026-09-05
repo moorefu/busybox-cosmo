@@ -115,6 +115,8 @@ config/            busybox 裁剪配置 (已验证, ~320 applet)
 patches/           busybox-cosmo-full.patch (82 文件完整适配) + cosmo 工具链定制补丁
 toolchain/         provision.sh (copy/download/build) + build-custom.sh + cosmo/(拷入工具链, gitignored)
 scripts/           fetch-busybox / fetch-w32-reference / prepare-worktree / build-ape / package-release
+lib/               portable.sh 跨平台 Shell 基础库
+examples/          portable-menu.sh 行式/非交互菜单示例
 tests/             smoke.sh(46) deep-test.sh(31) smoke-test.bat forkdiag
 assets/loaders/    ape-loader (64K 页 / 无 binfmt 部署)
 baseline/          2026-09-03 已验证发布包 (历史基线, md5 可对照)
@@ -130,6 +132,7 @@ Makefile           便捷入口 (build/package/smoke/clean)
 - `docs/DEPLOYMENT.md` — 各平台部署(Windows/Linux/64K 页/mac)
 - `docs/KNOWN-LIMITATIONS.md` — 已知限制与上游缺口
 - `docs/VERIFICATION-MATRIX.md` — 验证矩阵与可复现性记录
+- `docs/PORTABLE-RUNTIME-PLAN.md` — 跨平台脚本运行层与 TUI 体验规划
 
 ## 许可
 
