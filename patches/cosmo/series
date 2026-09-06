@@ -1,0 +1,6 @@
+# 锁定 3293fad0；顺序与旧构建脚本的 full + 字典序 extra 完全相同。
+cosmo-custom-full.patch
+cosmo-apelink-apeflags-extra.patch
+cosmo-mkntcmdline-roundtrip-extra.patch
+cosmo-pen-mac-loader-extra.patch
+cosmo-sethostname-extra.patch

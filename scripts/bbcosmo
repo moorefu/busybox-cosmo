@@ -8,7 +8,11 @@ else
 	HERE="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 fi
 if [ -z "${BBP_BUSYBOX:-}" ]; then
-	for bbcosmo_candidate in "$HERE/busybox" "$HERE/busybox.com"; do
+	case "$(uname -s 2>/dev/null)" in
+		*[Ww]indows*|*[Ww]in32*) bbcosmo_first="$HERE/busybox.com"; bbcosmo_second="$HERE/busybox" ;;
+		*) bbcosmo_first="$HERE/busybox"; bbcosmo_second="$HERE/busybox.com" ;;
+	esac
+	for bbcosmo_candidate in "$bbcosmo_first" "$bbcosmo_second"; do
 		if [ -x "$bbcosmo_candidate" ]; then
 			BBP_BUSYBOX=$bbcosmo_candidate
 			break
@@ -20,7 +24,7 @@ fi
 usage() {
 	cat >&2 <<'EOF'
 用法:
-  bbcosmo capabilities [--format text|shell|json]
+  bbcosmo capabilities [--format text|kv|json]
   bbcosmo doctor
   bbcosmo run <busybox 参数...>
 环境:
@@ -30,7 +34,24 @@ EOF
 }
 
 bbcosmo_json_escape() {
-	printf '%s' "$1" | bbp sed 's/\\/\\\\/g; s/"/\\"/g'
+	# shell 变量不能保存 NUL；其余 C0 控制字转为 JSON \u00xx，UTF-8 字节原样保留。
+	printf '%s' "$1" | bbp awk '
+		BEGIN { first = 1 }
+		{
+			if (!first) printf "\\n"
+			first = 0
+			for (i = 1; i <= length($0); i++) {
+				c = substr($0, i, 1)
+				if (c == "\\") printf "\\\\"
+				else if (c == "\"") printf "\\\""
+				else {
+					code = -1
+					for (j = 1; j < 32; j++) if (c == sprintf("%c", j)) { code = j; break }
+					if (code >= 0) printf "\\u%04x", code
+					else printf "%s", c
+				}
+			}
+		}'
 }
 
 bbcosmo_emit() {
@@ -44,7 +65,7 @@ bbcosmo_emit() {
 				"$(bbcosmo_json_escape "$bbcosmo_emit_value")"
 			bbcosmo_json_first=0
 			;;
-		shell) printf '%s=%s\n' "$bbcosmo_emit_name" "$bbcosmo_emit_value" ;;
+		kv) printf '%s=%s\n' "$bbcosmo_emit_name" "$bbcosmo_emit_value" ;;
 		text) printf '%-32s %s\n' "$bbcosmo_emit_name" "$bbcosmo_emit_value" ;;
 	esac
 }
@@ -62,12 +83,13 @@ bbcosmo_capability() {
 capabilities() {
 	bbcosmo_format=text
 	if [ "${1:-}" = --format ]; then
-		bbcosmo_format=${2:-text}
+		[ "$#" -ge 2 ] || { printf '%s\n' '--format 缺少值' >&2; return 2; }
+		bbcosmo_format=$2
 		shift 2
 	fi
 	[ "$#" -eq 0 ] || { printf '%s\n' 'capabilities 不接受额外参数' >&2; return 2; }
 	case "$bbcosmo_format" in
-		text|shell) ;;
+		text|kv) ;;
 		json) bbcosmo_json_first=1; printf '{\n' ;;
 		*) printf '%s\n' "不支持的格式: $bbcosmo_format" >&2; return 2 ;;
 	esac
@@ -96,12 +118,9 @@ capabilities() {
 	bbcosmo_xz_encoder=$(bbp_external_xz 2>/dev/null || true)
 	[ -n "$bbcosmo_xz_encoder" ] || bbcosmo_xz_encoder=none
 	bbcosmo_emit archive.xz.encoder "$bbcosmo_xz_encoder"
-	if [ -n "${BBP_HTTPS_GET:-}" ] && [ -x "$BBP_HTTPS_GET" ]; then
-		bbcosmo_emit network.https.peer_verified configured-unverified
-	else
-		bbcosmo_emit network.https.peer_verified unverified
-	fi
-	if bbp_tmpdir >/dev/null 2>&1; then
+	bbcosmo_emit network.https.peer_verified unavailable
+	bbcosmo_tmp=$(bbp_tmpdir 2>/dev/null || true)
+	if [ -n "$bbcosmo_tmp" ] && bbp_cleanup_dir "$bbcosmo_tmp"; then
 		bbcosmo_emit filesystem.temp available
 	else
 		bbcosmo_emit filesystem.temp unavailable
@@ -114,7 +133,7 @@ doctor() {
 	bbcosmo_fail=0
 	printf '%s\n' 'busybox-cosmo 运行诊断'
 	printf '入口: %s\n' "$BBP_BUSYBOX"
-	if [ -x "$BBP_BUSYBOX" ]; then
+	if bbp --list >/dev/null 2>&1; then
 		printf '%s\n' '入口可执行: 是'
 	else
 		printf '%s\n' '入口可执行: 否'
@@ -132,8 +151,8 @@ doctor() {
 	else
 		printf '%s\n' 'xz 创建: 不可用或未配置外部编码器'
 	fi
-	printf '%s\n' 'HTTPS 对端证书: 当前内置 TLS 不提供验证；请配置 BBP_HTTPS_GET'
-	printf '%s\n' '提示: 详细平台限制见 docs/KNOWN-LIMITATIONS.md'
+	printf '%s\n' 'HTTPS 对端证书: 不可用（当前内置 TLS 不提供可信校验）'
+	printf '%s\n' '提示: 详细平台限制见 KNOWN-LIMITATIONS.md（源码树位于 docs/）'
 	return "$bbcosmo_fail"
 }
 

@@ -1,0 +1,684 @@
+diff --git a/include/libbb.h b/include/libbb.h
+--- a/include/libbb.h
++++ b/include/libbb.h
+@@ -608,6 +608,14 @@
+ char *xmalloc_follow_symlinks(const char *path) FAST_FUNC RETURNS_MALLOC;
+ 
+ 
++	/* cosmopolitan (cosmocc<=4.0.2) declares SIGUSR1/2 as extern const;
++	 * not valid in constant expressions; pin to values */
++#if defined(__COSMOPOLITAN__)
++#undef SIGUSR1
++#undef SIGUSR2
++#define SIGUSR1 10
++#define SIGUSR2 12
++#endif
+ enum {
+ 	/* bb_signals(BB_FATAL_SIGS, handler) catches all signals which
+ 	 * otherwise would kill us, except for those resulting from bugs:
+@@ -776,6 +784,7 @@
+ /* Useful for having small structure members/global variables */
+ typedef int8_t socktype_t;
+ typedef int8_t family_t;
++#ifndef __COSMOPOLITAN__
+ struct BUG_too_small {
+ 	char BUG_socktype_t_too_small[(0
+ 			| SOCK_STREAM
+@@ -799,6 +808,9 @@
+ 			/* | AF_IPX */
+ 			) <= 127 ? 1 : -1];
+ };
++#else
++struct BUG_too_small { char _c; };
++#endif
+ 
+ 
+ int xsocket(int domain, int type, int protocol) FAST_FUNC;
+@@ -2471,7 +2483,14 @@
+ #define bb_path_motd_file "/etc/motd"
+ 
+ #define bb_dev_null "/dev/null"
++#if defined(__COSMOPOLITAN__)
++/* cosmo 无 /proc/self/exe 的 exec 支持: 宏替换为运行时解析(realpath(argv[0])) */
++# define bb_busybox_exec_path get_busybox_exec_path()
++extern const char *bb_argv0;
++extern const char *get_busybox_exec_path(void) FAST_FUNC;
++#else
+ extern const char bb_busybox_exec_path[] ALIGN1;
++#endif
+ /* allow default system PATH to be extended via CFLAGS */
+ #ifndef BB_ADDITIONAL_PATH
+ #define BB_ADDITIONAL_PATH ""
+diff --git a/libbb/appletlib.c b/libbb/appletlib.c
+--- a/libbb/appletlib.c
++++ b/libbb/appletlib.c
+@@ -722,6 +722,9 @@
+ 	return -1;
+ }
+ 
++#if defined(__COSMOPOLITAN__)
++const char *bb_argv0;
++#endif
+ int scripted_main(int argc UNUSED_PARAM, char **argv) MAIN_EXTERNALLY_VISIBLE;
+ int scripted_main(int argc UNUSED_PARAM, char **argv)
+ {
+@@ -1042,6 +1045,16 @@
+ int main(int argc UNUSED_PARAM, char **argv)
+ #endif
+ {
++#if defined(__COSMOPOLITAN__)
++	/* cosmo: execvp(/proc/self/exe) 不可用, 记录 argv[0] 供 exec 自身用 */
++	bb_argv0 = argv[0];
++	/* 预热: main 上下文(非 vfork)里解析一次自身 exec 路径并缓存。
++	 * ash STANDALONE 在 vfork 子进程里也要用该路径 —— 若首调发生在
++	 * vfork 子进程 (cosmo GetProgramExecutableName 会写共享内存 +
++	 * sysctl), m1 loader 下会破坏父进程状态 → 嵌套 exec 的 argv 错乱
++	 * (macOS ARM64 smoke-full 崩坏 "-qX: not found")。 */
++	get_busybox_exec_path();
++#endif
+ #if 0
+ 	/* TODO: find a use for a block of memory between end of .bss
+ 	 * and end of page. For example, I'm getting "_end:0x812e698 2408 bytes"
+diff --git a/libbb/cosmo_stubs.c b/libbb/cosmo_stubs.c
+--- /dev/null
++++ b/libbb/cosmo_stubs.c
+@@ -0,0 +1,408 @@
++#include <stdio.h>
++
++int kbd_mode_main(int argc, char **argv);
++int kbd_mode_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("kbd_mode: not supported in this build\n", stderr);
++	return 1;
++}
++int openvt_main(int argc, char **argv);
++int openvt_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("openvt: not supported in this build\n", stderr);
++	return 1;
++}
++int showkey_main(int argc, char **argv);
++int showkey_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("showkey: not supported in this build\n", stderr);
++	return 1;
++}
++int hostid_main(int argc, char **argv);
++int hostid_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("hostid: not supported in this build\n", stderr);
++	return 1;
++}
++int tune2fs_main(int argc, char **argv);
++int tune2fs_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("tune2fs: not supported in this build\n", stderr);
++	return 1;
++}
++int bootchartd_main(int argc, char **argv);
++int bootchartd_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("bootchartd: not supported in this build\n", stderr);
++	return 1;
++}
++int beep_main(int argc, char **argv);
++int beep_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("beep: not supported in this build\n", stderr);
++	return 1;
++}
++int fbsplash_main(int argc, char **argv);
++int fbsplash_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("fbsplash: not supported in this build\n", stderr);
++	return 1;
++}
++int flash_eraseall_main(int argc, char **argv);
++int flash_eraseall_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("flash_eraseall: not supported in this build\n", stderr);
++	return 1;
++}
++int flash_lock_unlock_main(int argc, char **argv);
++int flash_lock_unlock_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("flash_lock_unlock: not supported in this build\n", stderr);
++	return 1;
++}
++int flashcp_main(int argc, char **argv);
++int flashcp_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("flashcp: not supported in this build\n", stderr);
++	return 1;
++}
++int hdparm_main(int argc, char **argv);
++int hdparm_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("hdparm: not supported in this build\n", stderr);
++	return 1;
++}
++int i2c_tools_main(int argc, char **argv);
++int i2c_tools_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("i2c_tools: not supported in this build\n", stderr);
++	return 1;
++}
++int mt_main(int argc, char **argv);
++int mt_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("mt: not supported in this build\n", stderr);
++	return 1;
++}
++int nandwrite_main(int argc, char **argv);
++int nandwrite_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("nandwrite: not supported in this build\n", stderr);
++	return 1;
++}
++int partprobe_main(int argc, char **argv);
++int partprobe_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("partprobe: not supported in this build\n", stderr);
++	return 1;
++}
++int raidautorun_main(int argc, char **argv);
++int raidautorun_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("raidautorun: not supported in this build\n", stderr);
++	return 1;
++}
++int readahead_main(int argc, char **argv);
++int readahead_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("readahead: not supported in this build\n", stderr);
++	return 1;
++}
++int rfkill_main(int argc, char **argv);
++int rfkill_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("rfkill: not supported in this build\n", stderr);
++	return 1;
++}
++int seedrng_main(int argc, char **argv);
++int seedrng_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("seedrng: not supported in this build\n", stderr);
++	return 1;
++}
++int setserial_main(int argc, char **argv);
++int setserial_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("setserial: not supported in this build\n", stderr);
++	return 1;
++}
++int ubi_tools_main(int argc, char **argv);
++int ubi_tools_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("ubi_tools: not supported in this build\n", stderr);
++	return 1;
++}
++int ubirename_main(int argc, char **argv);
++int ubirename_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("ubirename: not supported in this build\n", stderr);
++	return 1;
++}
++int arp_main(int argc, char **argv);
++int arp_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("arp: not supported in this build\n", stderr);
++	return 1;
++}
++int brctl_main(int argc, char **argv);
++int brctl_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("brctl: not supported in this build\n", stderr);
++	return 1;
++}
++int ifupdown_main(int argc, char **argv);
++int ifupdown_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("ifupdown: not supported in this build\n", stderr);
++	return 1;
++}
++int nameif_main(int argc, char **argv);
++int nameif_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("nameif: not supported in this build\n", stderr);
++	return 1;
++}
++int tc_main(int argc, char **argv);
++int tc_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("tc: not supported in this build\n", stderr);
++	return 1;
++}
++int telnetd_main(int argc, char **argv);
++int telnetd_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("telnetd: not supported in this build\n", stderr);
++	return 1;
++}
++int traceroute_main(int argc, char **argv);
++int traceroute_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("traceroute: not supported in this build\n", stderr);
++	return 1;
++}
++int tunctl_main(int argc, char **argv);
++int tunctl_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("tunctl: not supported in this build\n", stderr);
++	return 1;
++}
++int zcip_main(int argc, char **argv);
++int zcip_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("zcip: not supported in this build\n", stderr);
++	return 1;
++}
++int klogd_main(int argc, char **argv);
++int klogd_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("klogd: not supported in this build\n", stderr);
++	return 1;
++}
++int logger_main(int argc, char **argv);
++int logger_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("logger: not supported in this build\n", stderr);
++	return 1;
++}
++int logread_main(int argc, char **argv);
++int logread_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("logread: not supported in this build\n", stderr);
++	return 1;
++}
++int syslogd_main(int argc, char **argv);
++int syslogd_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("syslogd: not supported in this build\n", stderr);
++	return 1;
++}
++int acpid_main(int argc, char **argv);
++int acpid_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("acpid: not supported in this build\n", stderr);
++	return 1;
++}
++int blkdiscard_main(int argc, char **argv);
++int blkdiscard_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("blkdiscard: not supported in this build\n", stderr);
++	return 1;
++}
++int blockdev_main(int argc, char **argv);
++int blockdev_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("blockdev: not supported in this build\n", stderr);
++	return 1;
++}
++int dmesg_main(int argc, char **argv);
++int dmesg_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("dmesg: not supported in this build\n", stderr);
++	return 1;
++}
++int eject_main(int argc, char **argv);
++int eject_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("eject: not supported in this build\n", stderr);
++	return 1;
++}
++int fallocate_main(int argc, char **argv);
++int fallocate_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("fallocate: not supported in this build\n", stderr);
++	return 1;
++}
++int fdisk_main(int argc, char **argv);
++int fdisk_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("fdisk: not supported in this build\n", stderr);
++	return 1;
++}
++int freeramdisk_main(int argc, char **argv);
++int freeramdisk_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("freeramdisk: not supported in this build\n", stderr);
++	return 1;
++}
++int fsfreeze_main(int argc, char **argv);
++int fsfreeze_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("fsfreeze: not supported in this build\n", stderr);
++	return 1;
++}
++int fstrim_main(int argc, char **argv);
++int fstrim_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("fstrim: not supported in this build\n", stderr);
++	return 1;
++}
++int ionice_main(int argc, char **argv);
++int ionice_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("ionice: not supported in this build\n", stderr);
++	return 1;
++}
++int ipcrm_main(int argc, char **argv);
++int ipcrm_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("ipcrm: not supported in this build\n", stderr);
++	return 1;
++}
++int ipcs_main(int argc, char **argv);
++int ipcs_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("ipcs: not supported in this build\n", stderr);
++	return 1;
++}
++int mkfs_ext2_main(int argc, char **argv);
++int mkfs_ext2_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("mkfs_ext2: not supported in this build\n", stderr);
++	return 1;
++}
++int mkfs_reiser_main(int argc, char **argv);
++int mkfs_reiser_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("mkfs_reiser: not supported in this build\n", stderr);
++	return 1;
++}
++int mkfs_vfat_main(int argc, char **argv);
++int mkfs_vfat_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("mkfs_vfat: not supported in this build\n", stderr);
++	return 1;
++}
++int nsenter_main(int argc, char **argv);
++int nsenter_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("nsenter: not supported in this build\n", stderr);
++	return 1;
++}
++int setarch_main(int argc, char **argv);
++int setarch_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("setarch: not supported in this build\n", stderr);
++	return 1;
++}
++int setpriv_main(int argc, char **argv);
++int setpriv_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("setpriv: not supported in this build\n", stderr);
++	return 1;
++}
++int swaponoff_main(int argc, char **argv);
++int swaponoff_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("swaponoff: not supported in this build\n", stderr);
++	return 1;
++}
++int umount_main(int argc, char **argv);
++int umount_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("umount: not supported in this build\n", stderr);
++	return 1;
++}
++int unshare_main(int argc, char **argv);
++int unshare_main(int argc, char **argv)
++{
++	(void)argc; (void)argv;
++	fputs("unshare: not supported in this build\n", stderr);
++	return 1;
++}
+diff --git a/libbb/messages.c b/libbb/messages.c
+--- a/libbb/messages.c
++++ b/libbb/messages.c
+@@ -27,7 +27,45 @@
+ 
+ const char bb_hexdigits_upcase[] ALIGN1 = "0123456789ABCDEF";
+ 
++#if !defined(__COSMOPOLITAN__)
+ const char bb_busybox_exec_path[] ALIGN1 = CONFIG_BUSYBOX_EXEC_PATH;
++#else
++/* cosmo 版: 自身路径运行时解析
++ * argv[0] 在多层 exec 后不可靠(exec 后 argv[0]=applet 名), 用 cosmo 运行时
++ * 在 APE 启动时填充的 __program_executable_name(绝对路径)。 */
++#include <limits.h>
++extern char *__program_executable_name;
++extern char *GetProgramExecutableName(void);
++const char *get_busybox_exec_path(void)
++{
++	static char bb_busybox_exec_path_buf[PATH_MAX];
++
++	if (!bb_busybox_exec_path_buf[0]) {
++		const char *p = NULL;
++		/* 1) cosmo 惰性解析 GetProgramExecutableName() 优先: mac 上它会走
++		 *    KERN_PROCARGS2, loader ('-') 形态下解析出 loader argv 里的
++		 *    载荷真实路径 (loader - PROG ARGV0.. → PROG) —— 任意嵌套深度
++		 *    都成立 (2026-09-04 mac loader STANDALONE 自 exec 修复)。
++		 * 2) 其次 argv[0] (首层启动 argv[0]=busybox 路径)。
++		 * 3) 再回落启动期 __program_executable_name (loader 形态下为
++		 *    loader 自身路径, 仅作最后兜底) / CONFIG 默认。 */
++		p = GetProgramExecutableName();
++		if (p && p[0] && realpath(p, bb_busybox_exec_path_buf))
++			return bb_busybox_exec_path_buf;
++		if (bb_argv0 && realpath(bb_argv0, bb_busybox_exec_path_buf))
++			return bb_busybox_exec_path_buf;
++		p = __program_executable_name;
++		if (!p || !p[0])
++			p = CONFIG_BUSYBOX_EXEC_PATH;
++		if (!realpath(p, bb_busybox_exec_path_buf)) {
++			/* realpath 失败: 退化为原样路径 */
++			safe_strncpy(bb_busybox_exec_path_buf, p,
++				     sizeof(bb_busybox_exec_path_buf));
++		}
++	}
++	return bb_busybox_exec_path_buf;
++}
++#endif
+ const char bb_default_login_shell[] ALIGN1 = LIBBB_DEFAULT_LOGIN_SHELL;
+ /* util-linux manpage says /sbin:/bin:/usr/sbin:/usr/bin,
+  * but I want to save a few bytes here. Check libbb.h before changing! */
+diff --git a/shell/ash.c b/shell/ash.c
+--- a/shell/ash.c
++++ b/shell/ash.c
+@@ -6105,6 +6105,53 @@
+ }
+ 
+ 
++#if defined(__COSMOPOLITAN__)
++#include <alloca.h>
++/* APE 文件(cosmo)在无 binfmt 平台: exec ENOEXEC 后交 ape loader。
++ * loader argv 需 [ape, cmd路径, 原argv0, 原argv1...]——ash 的"当脚本"
++ * fallback 会丢 argv0(applet 名), loader 路径完整保留。 */
++static void exec_ape_via_loader(const char *cmd, char **argv, char **envp)
++{
++	char apepath[PATH_MAX];
++	const char *apeloader = NULL;
++	int afd = open(cmd, O_RDONLY);
++	char amagic[8];
++	bool isape = false;
++	if (afd >= 0) {
++		if (full_read(afd, amagic, 8) == 8)
++			isape = (memcmp(amagic, "MZqFpD='", 8) == 0);
++		close(afd);
++	}
++	if (!isape)
++		return;
++	{
++		const char *home = getenv("HOME");
++		if (home) {
++			snprintf(apepath, sizeof(apepath), "%s/.ape-1.10", home);
++			if (access(apepath, X_OK) == 0) apeloader = apepath;
++		}
++	}
++	if (!apeloader && access("/usr/local/bin/ape", X_OK) == 0)
++		apeloader = "/usr/local/bin/ape";
++	if (!apeloader && access("/usr/bin/ape", X_OK) == 0)
++		apeloader = "/usr/bin/ape";
++	if (apeloader) {
++		int ni = 0, ai, argc = 0;
++		char **nargv;
++		while (argv[argc]) argc++;
++		/* 该函数可能运行在 vfork 子进程；使用子栈上的可变数组，不调用
++		 * malloc，也不再把参数静默截断到 63 项。 */
++		nargv = alloca((argc + 3) * sizeof(*nargv));
++		nargv[ni++] = (char *)apeloader;
++		nargv[ni++] = (char *)cmd;
++		for (ai = 0; argv[ai]; ai++)
++			nargv[ni++] = argv[ai];
++		nargv[ni] = NULL;
++		execve(apeloader, nargv, envp);
++	}
++}
++#endif
++
+ /*
+  * execve wrappers
+  */
+@@ -6164,6 +6211,11 @@
+ 	}
+ 	/* re-exec ourselves with the new arguments */
+ 	execve(bb_busybox_exec_path, argv, envp);
++#if defined(__COSMOPOLITAN__)
++	/* exec 自身(APE)在无 binfmt 平台 ENOEXEC——交 ape loader */
++	if (errno == ENOEXEC)
++		exec_ape_via_loader(bb_busybox_exec_path, argv, envp);
++#endif
+ 	/* If they called chroot or otherwise made the binary
+ 	 * no longer executable, return.
+ 	 */
+@@ -6182,6 +6234,11 @@
+ 	execve(cmd, argv, envp);
+ #endif
+ 	if (cmd != bb_busybox_exec_path && errno == ENOEXEC) {
++#if defined(__COSMOPOLITAN__)
++		/* APE 文件: 内核 ENOEXEC——交 ape loader(保留完整 argv) */
++		if (errno == ENOEXEC)
++			exec_ape_via_loader(cmd, argv, envp);
++#endif
+ 		/* Run "cmd" as a shell script:
+ 		 * http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html
+ 		 * "If the execve() function fails with ENOEXEC, the shell
+@@ -6273,9 +6330,16 @@
+ 	jp = makejob(1);
+ 
+ 	sigblockall(NULL);
++#if defined(__COSMOPOLITAN__)
++	/* cosmo: Windows vfork(共享内存语义) 与 ash 交互有缺陷(管道 exec 后
++	 * argv/数据错乱)。改用 fork: cosmo fork(fork-nt) 为完整内存复制,
++	 * 语义可靠(经 forkdiag 实机验证)。mac 上 vfork 本身被 cosmo 禁用。 */
++	pid = fork();
++#else
+ 	vforked = 1;
+ 
+ 	pid = vfork();
++#endif
+ 
+ 	if (!pid) {
+ 		forkchild(jp, n, FORK_FG);
+@@ -6283,8 +6347,9 @@
+ 		shellexec(argv[0], argv, path, idx);
+ 		/* NOTREACHED */
+ 	}
+-
++#if !defined(__COSMOPOLITAN__)
+ 	vforked = 0;
++#endif
+ 	sigclearmask();
+ 	forkparent(jp, n, FORK_FG, pid);
+ 
+diff --git a/shell/hush.c b/shell/hush.c
+--- a/shell/hush.c
++++ b/shell/hush.c
+@@ -2073,7 +2073,28 @@
+ 		| (1 << SIGINT)
+ 		| (1 << SIGHUP)
+ 		,
+-	SPECIAL_JOBSTOP_SIGS = 0
++	#if defined(__COSMOPOLITAN__)
++	/* cosmocc binds SIGSTOP-family as extern const (per-OS); not ICE */
++#undef SIGSTOP
++#undef SIGTSTP
++#undef SIGTTIN
++#undef SIGTTOU
++#undef SIGURG
++#undef SIGCHLD
++#undef SIGCONT
++#undef SIGUSR1
++#undef SIGUSR2
++#define SIGSTOP 19
++#define SIGTSTP 20
++#define SIGTTIN 21
++#define SIGTTOU 22
++#define SIGURG 23
++#define SIGCHLD 17
++#define SIGCONT 18
++#define SIGUSR1 10
++#define SIGUSR2 12
++#endif
++SPECIAL_JOBSTOP_SIGS = 0
+ #if ENABLE_HUSH_JOB
+ 		| (1 << SIGTTIN)
+ 		| (1 << SIGTTOU)

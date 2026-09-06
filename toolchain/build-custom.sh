@@ -5,7 +5,7 @@
 # 原则 (与 2026-09-03 已验证工具链逐字节一致):
 #   [基座] 官方 cosmocc (默认 v4.0.2 zip; 编译驱动/GCC14, 驱动不自行构建)
 #   [源码] 官方 cosmopolitan @3293fad    (jart/cosmopolitan master)
-#   [补丁] patches/cosmo/cosmo-custom-full.patch (17 文件)
+#   [补丁] patches/cosmo/series 显式排序（当前 5 项）
 #   [构建] master 树内 make → o/<arch>/cosmopolitan.a + crt/ape 部件
 #          (用基座 bin/make 4.4.1 自举; make 版本 3.81 会被拒)
 #   [组装] 基座 + 替换 libcosmo.a/crt/ape.* + 重装 include/ (master 头)
@@ -25,7 +25,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DL="$ROOT/toolchain/download"
-PATCH="$ROOT/patches/cosmo/cosmo-custom-full.patch"
+PATCH_SERIES="$ROOT/patches/cosmo/series"
 LOG_DIR="$ROOT/log"
 mkdir -p "$LOG_DIR"
 
@@ -45,7 +45,7 @@ die() { echo "[build][错误] $*" >&2; exit 1; }
 
 [ -f "$COSMO_TARBALL" ] || die "缺官方源码包, 先跑 toolchain/fetch-sources.sh"
 [ -f "$COSMOCC_ZIP" ]   || die "缺官方 cosmocc zip, 先跑 toolchain/fetch-sources.sh"
-[ -f "$PATCH" ]         || die "缺定制补丁: $PATCH"
+[ -f "$PATCH_SERIES" ]  || die "缺补丁序列: $PATCH_SERIES"
 
 # ---------- 0. 准备基座 (官方 cosmocc $COSMOCC_VER) ----------
 prep_base() {
@@ -63,32 +63,30 @@ prep_base() {
 # ---------- 1. 官方源码 + 打补丁 ----------
 prep_src() {
   local MARK="$SRC_DIR/.bb-cosmo-prepared"
+  local expected
+  expected="$(python3 "$ROOT/scripts/patch-series.py" fingerprint "$PATCH_SERIES"):$COSMO_COMMIT:$COSMOCC_VER"
   if [ -f "$MARK" ]; then
+    grep -qx "$expected" "$MARK" || die "工具链源码指纹过期，请先移走旧源码树: $SRC_DIR"
     log "复用已备源码树 $SRC_DIR (已打补丁, .cosmocc 就绪)"
     return
   fi
-  log "解压官方 cosmopolitan master 源码 ..."
-  rm -rf "$SRC_DIR"; mkdir -p "$ROOT/work"
-  tar xzf "$COSMO_TARBALL" -C "$ROOT/work"
-  # tarball 顶层目录 = cosmopolitan-<sha> 恰为 SRC_DIR; 若不同名则改过来
-  if [ ! -d "$SRC_DIR" ]; then
-    mv "$ROOT/work/cosmopolitan-$COSMO_COMMIT" "$SRC_DIR"
-  fi
-
-  log "打定制补丁 (17 文件) ..."
-  ( cd "$SRC_DIR" && patch -p1 -s < "$PATCH" ) || die "补丁应用失败"
-
-  # 追加定制(如 sethostname 跨平台实现): 按需逐个应用 patches/cosmo/cosmo-*-extra.patch
-  for extra in "$ROOT/patches/cosmo"/cosmo-*-extra.patch; do
-    [ -f "$extra" ] || continue
-    log "打附加定制补丁 $(basename "$extra") ..."
-    ( cd "$SRC_DIR" && patch -p1 -s < "$extra" ) || die "附加补丁失败: $extra"
-  done
+  [ ! -e "$SRC_DIR" ] || die "源码树缺少完成标志，不覆盖: $SRC_DIR"
+  log "解压官方 cosmopolitan master 源码并应用序列 ..."
+  mkdir -p "$ROOT/work"
+  local unpack
+  unpack="$(mktemp -d "$ROOT/work/.cosmo-unpack.XXXXXX")"
+  (
+    trap 'rm -rf "$unpack"' EXIT
+    tar xzf "$COSMO_TARBALL" -C "$unpack"
+    python3 "$ROOT/scripts/patch-series.py" check "$PATCH_SERIES"
+    python3 "$ROOT/scripts/patch-series.py" apply "$PATCH_SERIES" \
+      --source "$unpack/cosmopolitan-$COSMO_COMMIT" --target "$SRC_DIR"
+  )
 
   log "预置 .cosmocc/3.9.2 ← 官方 cosmocc $COSMOCC_VER (目录名为上游 Makefile 固定路径, 内容为 $COSMOCC_VER; make 自举用) ..."
   mkdir -p "$SRC_DIR/.cosmocc"
   ( cd "$SRC_DIR/.cosmocc" && rm -rf 3.9.2 && unzip -q "$COSMOCC_ZIP" -d 3.9.2 && ln -sfn 3.9.2 current )
-  touch "$MARK"
+  printf '%s\n' "$expected" > "$MARK"
   log "源码树就绪: $SRC_DIR"
 }
 

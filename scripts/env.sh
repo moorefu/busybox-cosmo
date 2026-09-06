@@ -18,16 +18,12 @@ BB_SHA256="34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2"
 CONFIG_DIR="$ROOT/config"
 PATCHES_DIR="$ROOT/patches"
 SRC_DIR="$ROOT/src"            # 原版源码 (可重建)
-WORK_DIR="$ROOT/work"          # 各架构打补丁构建树 (可重建)
+WORK_DIR="${BUSYBOX_WORK_DIR:-$ROOT/work}" # 可指定新目录，绝不自动覆盖旧补丁树
 DIST_DIR="$ROOT/dist"          # 产物输出
 BASELINE_DIR="$ROOT/baseline"  # 历史已验证发布包基线
 TOOLCHAIN_DIR="$ROOT/toolchain"
 
-# 完整 busybox 适配补丁 (含 82 文件)
-BB_FULL_PATCH="$PATCHES_DIR/busybox-cosmo-full.patch"
-# 增量补丁: 恢复部分被裁 applet 为真实实现 (free/uptime/ar/uncompress/unlzop/lzopcat/
-# telnet/hostname) + w32 移植 make; 应用在 full patch 之后; 置空则跳过
-BB_RESTORE_PATCH="$PATCHES_DIR/busybox-applet-restore.patch"
+BB_PATCH_SERIES="$PATCHES_DIR/busybox/series"
 # 这些符号由增量补丁新增源码引入(kconfig 新符号), prepare 时锚定并强制 =y
 BB_FORCE_APP_LETS="CONFIG_MAKE CONFIG_PDPMAKE"
 

@@ -18,3 +18,5 @@
 # editor/OS noise
 .idea/
 .vscode/
+__pycache__/
+*.py[cod]

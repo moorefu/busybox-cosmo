@@ -1,6 +1,17 @@
 # busybox-cosmo 工程便捷入口 (底层请直接调用 scripts/*.sh / toolchain/*.sh)
 .PHONY: help fetch build x86_64 aarch64 fat package smoke smokefull clean distclean \
-        toolchain-copy toolchain-fetch toolchain-build toolchain-verify portable-check
+        toolchain-copy toolchain-fetch toolchain-build toolchain-verify portable-check check test
+
+BUSYBOX ?= $(CURDIR)/dist/release/release/busybox
+
+check:
+	bash scripts/check.sh
+
+test:
+	"$(BUSYBOX)" ash tests/ash-contract.sh
+	"$(BUSYBOX)" ash tests/deep-test.sh
+	"$(BUSYBOX)" ash tests/smoke-full.sh
+	BBP_BUSYBOX="$(BUSYBOX)" "$(BUSYBOX)" ash tests/portable-contract.sh
 
 help:
 	@echo "=== 构建 busybox ==="
@@ -10,7 +21,7 @@ help:
 	@echo "make fat              — 合成双架构 fat (dist/busybox-fat.ape)"
 	@echo "make build            — x86_64 + aarch64 + fat 全量"
 	@echo "make package          — 生成发布包 (dist/busybox-cosmo-release.zip)"
-	@echo "make smoke            — 本地副本冒烟(46 项: busybox.com sh smoke.sh)"
+	@echo "make smoke            — 本地副本快速离线冒烟"
 	@echo "make smokefull        — 完整冒烟(10 组 ~180 项, 自适应 SKIP, 本地回环网络)"
 	@echo "make portable-check   — 运行跨平台 Shell 基础库契约测试(需已构建发布包)"
 	@echo ""
@@ -21,6 +32,8 @@ help:
 	@echo "make toolchain-verify — 校验 toolchain/cosmo vs 参考 .cosmocc/3.9.2"
 	@echo ""
 	@echo "=== 维护 ==="
+	@echo "make check            — 语法、补丁序列、维护脚本回归（不构建、不下载）"
+	@echo "make test BUSYBOX=路径 — ash/深度/功能契约（测试已有产物，不重建）"
 	@echo "make clean            — 删除可重建产物 (src/work/dist 保留工具链)"
 	@echo "make distclean        — clean + 移除工具链"
 
@@ -41,20 +54,14 @@ build: x86_64 aarch64 fat
 package: build
 	scripts/package-release.sh
 
-smoke: package
-	@rm -rf .tmp/smoke && mkdir -p .tmp/smoke
-	@cp -R dist/release/release/. .tmp/smoke/
-	@cd .tmp/smoke && BUSYBOX_COSMO_CACHE="$$PWD/cache" ./busybox sh smoke.sh
+smoke:
+	"$(BUSYBOX)" ash tests/smoke.sh
 
-smokefull: package
-	@rm -rf .tmp/smokef && mkdir -p .tmp/smokef
-	@cp -R dist/release/release/. .tmp/smokef/
-	@cd .tmp/smokef && BUSYBOX_COSMO_CACHE="$$PWD/cache" ./busybox sh smoke-full.sh
+smokefull:
+	"$(BUSYBOX)" ash tests/smoke-full.sh
 
-portable-check: package
-	@rm -rf .tmp/portable && mkdir -p .tmp/portable
-	@cp -R dist/release/release/. .tmp/portable/
-	@cd .tmp/portable && BUSYBOX_COSMO_CACHE="$$PWD/cache" ./busybox sh portable-contract.sh
+portable-check:
+	BBP_BUSYBOX="$(BUSYBOX)" "$(BUSYBOX)" ash tests/portable-contract.sh
 
 toolchain-copy:
 	toolchain/provision.sh copy

@@ -1,0 +1,64 @@
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -290,7 +290,7 @@
+ 
+ AS		= $(CROSS_COMPILE)as
+ CC		= $(CROSS_COMPILE)gcc
+-LD		= $(CC) -nostdlib
++LD		= $(CC)
+ CPP		= $(CC) -E
+ AR		= $(CROSS_COMPILE)ar
+ NM		= $(CROSS_COMPILE)nm
+@@ -490,7 +490,6 @@
+ 		runit/ \
+ 		selinux/ \
+ 		shell/ \
+-		sysklogd/ \
+ 		util-linux/ \
+ 		util-linux/volume_id/ \
+ 
+diff --git a/libbb/Kbuild.src b/libbb/Kbuild.src
+--- a/libbb/Kbuild.src
++++ b/libbb/Kbuild.src
+@@ -56,12 +56,13 @@
+ lib-y += login.o
+ lib-y += make_directory.o
+ lib-y += makedev.o
++lib-y += cosmo_stubs.o
+ lib-y += hash_md5_sha.o
+-lib-y += hash_sha1_x86-64.o
++#lib-y += hash_sha1_x86-64.o
+ lib-y += hash_sha1_hwaccel_x86-64.o
+-lib-y += hash_sha1_hwaccel_x86-32.o
++#lib-y += hash_sha1_hwaccel_x86-32.o
+ lib-y += hash_sha256_hwaccel_x86-64.o
+-lib-y += hash_sha256_hwaccel_x86-32.o
++#lib-y += hash_sha256_hwaccel_x86-32.o
+ # Alternative (disabled) MD5 implementation
+ #lib-y += hash_md5prime.o
+ lib-y += messages.o
+diff --git a/scripts/Makefile.IMA b/scripts/Makefile.IMA
+--- a/scripts/Makefile.IMA
++++ b/scripts/Makefile.IMA
+@@ -40,7 +40,7 @@
+ endif
+ AS              = $(CROSS_COMPILE)as
+ CC              = $(CROSS_COMPILE)gcc
+-LD              = $(CC) -nostdlib
++LD              = $(CC)
+ CPP             = $(CC) -E
+ AR              = $(CROSS_COMPILE)ar
+ NM              = $(CROSS_COMPILE)nm
+diff --git a/scripts/Makefile.build b/scripts/Makefile.build
+--- a/scripts/Makefile.build
++++ b/scripts/Makefile.build
+@@ -257,7 +257,7 @@
+ # If the list of objects to link is empty, just create an empty built-in.o
+ # -nostdlib is added to make "make LD=gcc ..." work (some people use that)
+ cmd_link_o_target = $(if $(strip $(obj-y)),\
+-		$(LD) -nostdlib $(ld_flags) -r -o $@ $(filter $(obj-y), $^),\
++		$(LD) $(ld_flags) -r -o $@ $(filter $(obj-y), $^),\
+ 		rm -f $@; $(AR) rcs $@)
+ 
+ $(builtin-target): $(obj-y) FORCE

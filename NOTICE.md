@@ -14,4 +14,6 @@
 - Cosmopolitan 为静态链接许可友好的 ISC; 工具链本身不随 APE 分发。
 - 各补丁归属: 历史适配工作 (2026) + 上游补丁来源见 `patches/cosmo/README.md` 与 `docs/ARCHITECTURE.md`。
 
-许可文本参考: `toolchain/cosmo/LICENSE.*` (工具链自带); busybox `LICENSE` (源码树内)。
+BusyBox 许可文本固定在 `licenses/BUSYBOX-GPL-2.0.txt`，发布包内文件名为
+`BUSYBOX-GPL-2.0.txt`；
+工具链构建依赖的其他许可文本见 `toolchain/cosmo/LICENSE.*`。

@@ -1,0 +1,7 @@
+# BusyBox 1.38.0；顺序是构建契约，不通过通配符推断。
+0001-build.patch
+0002-runtime-shell.patch
+0003-terminal-signals.patch
+0004-applets.patch
+0005-platform-selection.patch
+0006-make-import.patch

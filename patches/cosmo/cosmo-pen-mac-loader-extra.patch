@@ -3,7 +3,7 @@
 # 问题: macOS 上程序经 ape loader (bb.sh / cosmo execve 用 "loader - PROG ..."
 # 形态) 加载时, 启动期 __program_executable_name 取 loader 传入的 AT_EXECFN
 # (=loader 自身路径); GetProgramExecutableName() 惰性解析走 KERN_PROCARGS2,
-# 首串同样是 loader 路径。旧修复 (cosmo-custom-full.patch) 检测到 OldApeLoader
+# 首串同样是 loader 路径。序列前置补丁 cosmo-custom-full.patch 检测到 OldApeLoader
 # 后回退 argv[0] —— 但 busybox 多层 STANDALONE 嵌套 exec 后 argv[0] 是 applet
 # 名 ("sh"/"sed"), realpath 必败 → busybox 找不到自身 → ash 回落 PATH 执行
 # 系统原生工具 (macOS ARM64 loader 形态 deep-test 3 + smoke 7 项 FAIL, 现象
@@ -13,15 +13,14 @@
 # 载荷参数 (实测布局: [exe, "", argv0, argv1, ...]; loader argv[1]=='-' 时
 # 载荷路径 = argv[2], 否则 = argv[1]) —— 该路径在任意嵌套深度都指向真实
 # 被加载的 APE, 与 argv[0] 无关。配合 busybox get_busybox_exec_path() 改调
-# GetProgramExecutableName() (busybox-cosmo-full.patch 内 messages.c)。
+# GetProgramExecutableName() (BusyBox 0002-runtime-shell.patch 内 messages.c)。
 #
 # 验证: x86_64 mac loader (ape-m1-loader-src.c 同源代理, 名 ~/.ape-1.10):
 #   bootPEN/lazyPEN 深度 1/2 均=载荷路径; loader 形态 deep-test 31/31、
 #   smoke-full 173 PASS/0 FAIL (修复前 28/31 + 7 FAIL)。Linux/Windows 分支
 #   未触碰 (仅 IsXnu 内 OldApeLoader 分支)。
 #
-# 应用对象: cosmopolitan master 源码树 (patch -p1), 与
-#   toolchain/build-custom.sh 的 cosmo-*-extra.patch 自动收集一致。
+# 应用对象: 锁定的 Cosmopolitan 源码树，由 patches/cosmo/series 显式排序。
 
 --- a/libc/calls/getprogramexecutablename.greg.c
 +++ b/libc/calls/getprogramexecutablename.greg.c

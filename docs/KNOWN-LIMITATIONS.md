@@ -1,39 +1,27 @@
-# KNOWN-LIMITATIONS — 已知限制与遗留
+# 已知限制
 
-## 功能限制
+本页只列当前使用边界；修复过程及过往 CI 数字放在[历史记录](history/README.md)。“已编译”“测试通过”“所有场景可用”是不同结论。
 
-| 项 | 说明 | 状态 |
-|---|---|---|
-| `ps` 在 mac | 透传 `/bin/ps`; 沙箱禁止 exec 外部程序时报 Operation not permitted | 环境相关, 非缺陷 |
-| `mkfifo` / `mknod` | cosmo 未实现 mknodat wrapper (Linux/mac 均 ENOSYS) | cosmo 上游缺口 |
-| `sethostname`(hostname 写) | 已由工程补丁实现三平台等价物; mac/win 需 root/管理员 (非 root 得 EPERM, 读不受限) | cosmo-sethostname-extra.patch |
-| `nproc` | cosmo 未实现 sched_getaffinity | cosmo 上游缺口 |
-| 64KB 页 Linux aarch64 | 三环修复: ①loader 64K 对齐 (master 重建 ape-aarch64.elf) ②apelink 二进制重建 (官方 zip 未含补丁, 载荷曾放 0x4000 被 64K loader 拒) ③fat 内嵌 loader。另有 `busybox-arm64-linux-elf` 免 loader 直跑。qemu 真 64K 内核 (generic-64k) 实测: ELF/fat/单架构直接 exec 全 OK | ✅ 2026-09-04 (qemu 真 64K 内核模拟) |
-| APE 内置 `--assimilate` 仅 mac 有效 | Linux 上产物坏 ELF (cosmopolitan 布局局限: 只 printf ELF 头不重定位 phdr); Linux 转原生须外部 `assimilate` 工具或 binfmt (qemu 实测 2026-09-04) | cosmo 上游级, 已文档化 |
-| Linux loader 形态嵌套 exec 受限 | 无 binfmt 时直接 exec APE 走内嵌 loader; 顶层命令可用, ash 嵌套 exec 受限 (qemu arm64/x86 实测 smoke 1/46) | 需 binfmt/ELF/工具 |
-| mac Apple Silicon 原生 arm64 | 曾 0/155 FAIL, 三层根因均已自建补丁修复 (2026-09-04 arm64 真机 CI 全绿): ①apelink shell ELF 头 e_flags=0 → loader 改写 argv[0]: `patches/cosmo/cosmo-apelink-apeflags-extra.patch`。②loader 深度嵌套 STANDALONE exec 找不到自身 → GetProgramExecutableName 解析 loader argv 载荷路径 `patches/cosmo/cosmo-pen-mac-loader-extra.patch` + busybox messages.c/main 预热 (busybox-cosmo-full.patch)。③bb.sh 复用 cache 时 LDR 回退到发行件原名 (非 ~/.ape-1.10, 不匹配 OldApeLoader) → 载荷把 loader 当自身 → loader 预置改为每次调用执行。CI: macos-15 arm64 deep-test 31/31 + smoke-full 174/0 | ✅ 全绿 (2026-09-04) |
-| Windows fork | CreateProcess+全内存复制, 较慢; cosmo issue #1174 (accept 场景 socket 继承) 部分未根治 | connect 实测无碍 |
-| fat.ape 在 4K/16K 页 aarch64 真机 | qemu-system-aarch64 全系统 (4K 与 64K 内核) 已实测直接 exec + 嵌套 exec; 真机 (鲲鹏 UOS 4K/16K) 仍建议最终冒烟 | 模拟已覆盖, 真机待补 |
-| QuickEdit 鼠标补丁 | tcsetattr 定制已打入工具链 | 需 Windows 最终确认 |
-| APE 同化 | 首跑改写自身为平台格式; 分发必须 zip 母本 | 设计使然, 测试纪律 |
-| `zcat` | busybox 本义为 .Z 解压器; 解 gzip 用 `gzip -dc` | 用法说明 |
-| `tar cJf` | BusyBox `xz/lzma` 入口通常只有解码能力；创建 xz 包需要 PATH 中独立的外部编码器。缺少编码器时应返回非零，不生成可误判为空的归档 | 已在 cosmo 分支分流；外部依赖需在发布环境提供 |
-| `stty` termios 索引 | Cosmopolitan 的 macOS/BSD `c_cc` 布局与 Linux 不同，当前 BusyBox 补丁仍使用编译期兼容表；真实 macOS/Windows PTY 运行时适配尚未作为本轮完成项 | P0，待专用 PTY 验证与运行时索引改造 |
-| Windows exec argv 含 `\`+`"` 序列 | cosmo Windows 由 argv 重建 CreateProcess 命令行时, 参数内「反斜杠紧跟双引号」曾错乱 (`x\"y` → `x"\y`), 使 `awk "{...\"...\"}"` 等传参失败。**已自建补丁修复**: `patches/cosmo/cosmo-mkntcmdline-roundtrip-extra.patch` (mkntcmdline 遇引号前反斜杠先行双写), 真实二进制 round-trip 全组合验证一致 | ✅ 自建补丁 (2026-09-04); 测试用例保留 heredoc/-v 规避写法 (deep-test/smoke-full) 作跨平台基线 |
+| 能力 | 边界与建议 |
+|---|---|
+| ash 基础脚本 | 优先包内 ash、明确参数引号和退出码。新增契约覆盖引用、管道、exec、argv、wait 等，但不是 POSIX 完整认证 |
+| stty / raw TUI | 当前 termios 编译期索引仍有跨平台布局风险。mac/Windows 的真实 PTY 验证与运行时索引改造未完成；不要依赖 raw 模式做一致性承诺 |
+| HTTPS wget | 内置 TLS 不等于证书可信校验。当前路径不能作为可信下载后端；需要经验证的校验证书后端或离线签名校验 |
+| xz / lzma 压缩 | BusyBox applet 主要提供解码；`tar cJf` 创建归档需要独立外部 xz 编码器。缺少编码器必须视为错误 |
+| Unicode | 配置支持部分宽字符，但不是完整 Unicode 字形/宽度引擎；组合字符、emoji 和超过 U+9FFF 的清洗/宽度路径不能承诺一致。原始字节输出与终端排版是两回事 |
+| mac ps | 透传系统 `/bin/ps`，选项、输出及沙箱权限不同；脚本不要解析它作为跨平台进程协议 |
+| Windows 进程/网络 | fork 成本高，fork 后 socket 继承、服务器 accept 路径仍需验证；不能由客户端 connect 成功推断服务器可用 |
+| 权限/信号/特殊文件 | Windows 用户、权限与信号模型不是 POSIX；mkfifo/mknod、nproc 等受锁定 libc 实现限制，不属于可移植基线 |
+| 单调时钟 | 锁定 Cosmopolitan 的 `clock_gettime(CLOCK_MONOTONIC)` 在当前 macOS x86_64 会触发 SIGILL，并影响 dd、shuf 等 applet；BusyBox 配置使用 `gettimeofday` 后备。系统时间跳变可能影响长时间测量，升级 libc 后应恢复单调时钟并重测 |
+| 启动与缓存 | loader 的名字、argv 布局及用户目录约定属于 ABI 依赖；只复制二进制、不带匹配 loader 可能改变行为 |
+| ARM64 | Linux/macOS 有 ARM64 载荷；Windows ARM64 是 x86_64 仿真。macOS ARM64 与 Windows ARM64 CI 仍非阻塞 |
+| 64K 页 | 本项目定制产物覆盖 64K 对齐链路，不代表任意官方 cosmocc 产物也支持；仍需目标内核实测 |
+| 脚本兼容库 | `portable.sh` / `bbcosmo` 是实验 API，行式交互为当前基础；临时目录所有权、trap 隔离、JSON 控制字符转义和能力探测仍需强化 |
 
-## 结构约束
+## 使用原则
 
-- APE 静态链接, 无 dlopen 扩展 — 对 busybox 无影响。
-- 信号/权限/用户模型在 Windows 上为模拟 (busybox-w32 同款问题)。
-- Windows 设备文件 (/dev/null 等) 不能传给外部 Windows 程序。
+- 自动化先选非交互模式；交互先保证行式模式，再逐项验证 TUI。
+- 不把 SKIP、SOFT 或非阻塞平台的失败计算为“全功能一致”。
+- 涉及系统配置、权限修改、网络服务和可信下载，必须做目标环境专测。
 
-## 上游 issue 草稿 (待提交)
-
-- cosmopolitan: Windows fork accept 场景 socket 继承 (#1174 部分修复, 已跟进)。
-- cosmopolitan apeinstall: `P` flag 注册应支持 <5.12 内核 (见 `patches/cosmo/issue-apeinstall-P-flag-old-kernel.md`)。
-- cosmopolitan: mknodat / sched_getaffinity 缺失。
-
-## 测试差异说明 (2026-09-03 实机记录)
-
-- 冒烟 46 项含 2 项 `[win]` 专属 (路径映射 /c/Windows), 其他平台为预期 FAIL。
-- `ps` 项在 mac 依赖 exec 系统 /bin/ps 的沙箱许可; 本次 mac 沙箱内 44/46 与基线行为一致。
+下一步优先级见[路线图](ROADMAP.md)，可运行的测试见[测试指南](TESTING.md)。

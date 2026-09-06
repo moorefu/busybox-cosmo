@@ -14,26 +14,8 @@ PASS=0; FAIL=0; SKIP=0; SOFT=0
 LIST=""
 TM_SEQ=0
 
-# 所有临时文件隔离到唯一目录；失败时保留目录位置，避免并发运行互相
-# 覆盖，也不污染调用者当前目录。
-# Windows cosmo 上可能没有 POSIX /tmp，且 mktemp 对 Windows 路径解析不一致。
-# 在当前可写的发布目录创建带 PID 的隔离目录，不依赖宿主 mktemp。
-TEST_ROOT="busybox-smoke-$$"
-suffix=0
-while ! mkdir "$TEST_ROOT" 2>/dev/null; do
-	suffix=$((suffix + 1))
-	TEST_ROOT="busybox-smoke-$$-$suffix"
-done
-KEEP_TEST_ROOT="${KEEP_TEST_ROOT:-0}"
-cleanup_smoke() {
-	if [ "$KEEP_TEST_ROOT" = 1 ]; then
-		echo "测试临时目录已保留: $TEST_ROOT" >&2
-	else
-		rm -rf "$TEST_ROOT"
-	fi
-}
-trap cleanup_smoke EXIT HUP INT TERM
-cd "$TEST_ROOT" || exit 2
+. "$(dirname "$0")/testlib.sh"
+bbtest_init smoke
 
 # 平台判定: cosmo Windows 的 uname -s = "Windows"
 # (信号模拟、fork 后 accept 的 socket 继承 = cosmo #1174 部分未根治,
@@ -43,10 +25,23 @@ case "$(uname -s 2>/dev/null)" in
 	*[Ww]indows*|*[Ww]in32*) IS_WIN=1 ;;
 esac
 
-bb_list() { [ -n "$LIST" ] || LIST="$(busybox --list 2>/dev/null)"; echo "$LIST"; }
+LIST="$(busybox --list 2>/dev/null)" || {
+	echo "FAIL: 无法读取 BusyBox applet 清单" >&2
+	exit 2
+}
+bb_list() { printf '%s\n' "$LIST"; }
 
 # 工具存在性
-have() { bb_list | grep -qx "$1"; }
+have() {
+	case "
+$LIST
+" in
+		*"
+$1
+"*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
 
 # 组计数
 g_PASS=0; g_FAIL=0; g_SKIP=0; g_SOFT=0
@@ -54,7 +49,7 @@ g_PASS=0; g_FAIL=0; g_SKIP=0; g_SOFT=0
 # 硬测试: 失败即 FAIL
 t() {
 	desc="$1"; shift
-	if "$@" >/dev/null 2>&1; then
+	if bbtest_run "$@"; then
 		echo "PASS: $desc"; PASS=$((PASS+1)); g_PASS=$((g_PASS+1))
 	else
 		echo "FAIL: $desc"; FAIL=$((FAIL+1)); g_FAIL=$((g_FAIL+1))
@@ -63,6 +58,13 @@ t() {
 # 需要某 applet, 缺失则 SKIP
 tn() { # tn <applet> <desc> <cmd...>
 	a="$1"; desc="$2"; shift 2
+	case "$a" in
+		'['|'[[') ;;
+		*[!A-Za-z0-9_.+-]*)
+			echo "FAIL: 测试定义中的非法 applet 名: $a" >&2
+			FAIL=$((FAIL+1)); g_FAIL=$((g_FAIL+1)); return 0
+			;;
+	esac
 	if ! have "$a"; then
 		echo "SKIP: $desc (无 $a)"; SKIP=$((SKIP+1)); g_SKIP=$((g_SKIP+1)); return 0
 	fi
@@ -71,7 +73,7 @@ tn() { # tn <applet> <desc> <cmd...>
 # 软测试(平台/环境差异), 失败记 SOFT 不使套件失败
 ts() {
 	desc="$1"; shift
-	if "$@" >/dev/null 2>&1; then
+	if bbtest_try "$@"; then
 		echo "PASS: $desc"; PASS=$((PASS+1)); g_PASS=$((g_PASS+1))
 	else
 		echo "SOFT: $desc"; SOFT=$((SOFT+1)); g_SOFT=$((g_SOFT+1))
@@ -83,13 +85,14 @@ tm() { # tm <desc> <pattern> <cmd...>
 	TM_SEQ=$((TM_SEQ+1))
 	out="tm-output-$$-$TM_SEQ"
 	producer_rc=0
-	"$@" >"$out" 2>/dev/null || producer_rc=$?
+	( "$@" ) >"$out" 2>"$out.err" || producer_rc=$?
 	if [ "$producer_rc" -eq 0 ] && grep -qE "$pat" "$out"; then
 		echo "PASS: $desc"; PASS=$((PASS+1)); g_PASS=$((g_PASS+1))
 	else
-		echo "FAIL: $desc"; FAIL=$((FAIL+1)); g_FAIL=$((g_FAIL+1))
+		echo "FAIL: $desc (命令退出码=$producer_rc，期望模式=$pat)"; FAIL=$((FAIL+1)); g_FAIL=$((g_FAIL+1))
+		cat "$out" "$out.err" >&2
 	fi
-	rm -f "$out"
+	rm -f "$out" "$out.err"
 }
 # Windows 平台缺口(cosmo 模拟限制) → 记 SKIP 不执行, 避免挂死/误判
 ws() { # ws <desc> <原因>
@@ -130,11 +133,7 @@ t "mv 跨目录" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo m>"$d/f" && mv
 t "ln 硬链接" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo l>"$d/h" && ln "$d/h" "$d/i" && test "$d/h" -ef "$d/i" && rm -rf "$d"'
 t "ln -s 符号链接" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo s>"$d/r" && ln -sfn r "$d/s" && test -e "$d/s" && rm -rf "$d"'
 t "dd bs/count/seek" sh -c 'printf xxxxxxxx | dd bs=2 count=4 2>/dev/null | wc -c | grep -q 8'
-if [ "$IS_WIN" = 1 ]; then
-	ws "dd 写文件大小" "win: 无 POSIX /dev/zero，见 KNOWN-LIMITATIONS"
-else
-	t "dd 写文件大小" sh -c 'dd if=/dev/zero of=sf.bin bs=100 count=3 2>/dev/null && test "$(wc -c <sf.bin)" = 300 && rm -f sf.bin'
-fi
+t "/dev/zero + dd 写文件大小" sh -c 'dd if=/dev/zero of=sf.bin bs=100 count=3 2>/dev/null && test "$(wc -c <sf.bin)" = 300 && rm -f sf.bin'
 t "ls -l 可读" sh -c 'touch sf.f && ls -l sf.f | grep -q -- "-rw" && rm -f sf.f'
 t "ls -a 隐藏" sh -c 'touch .sfh && ls -a | grep -q ".sfh" && rm -f .sfh'
 t "stat 文件" sh -c 'touch sf.f && stat sf.f >/dev/null 2>&1 && rm -f sf.f'
@@ -278,14 +277,20 @@ gsum
 
 GNO="G"
 group "本地网络(回环, 不依赖外网)"
-P=23241
-if [ "$IS_WIN" = 1 ]; then
+P=$((23000 + ($$ % 1000)))
+if [ "${BBTEST_NETWORK:-0}" != 1 ]; then
+	ws "nc 本地回环" "默认离线；设置 BBTEST_NETWORK=1 启用"
+	ws "telnet 本地回显" "默认离线；设置 BBTEST_NETWORK=1 启用"
+	ws "tcp 双向 socket" "默认离线；设置 BBTEST_NETWORK=1 启用"
+	ws "nslookup localhost" "默认离线；设置 BBTEST_NETWORK=1 启用"
+elif [ "$IS_WIN" = 1 ]; then
 	# cosmo #1174: Windows fork 后 accept 场景 socket 继承未根治 + 信号/进程模拟
 	# → nc -l / tcp 服务端回环测试不可靠(会 FAIL 甚至挂死), 跳过; 客户端 nslookup 保留
 	ws "nc 本地回环(服务端)" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
 	ws "telnet 本地回显" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
 	ws "tcp 双向 socket" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
 	echo "      (Windows: 网络组以 nslookup 客户端为准; nc/telnet/tcp 服务端缺口见 KNOWN-LIMITATIONS)"
+	ts "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
 else
 	# 简易回显服务器: busybox nc -l -p -e cat(若 -e 支持) 否则退化为只测连接
 	if nc -h 2>&1 | grep -q '\-e'; then
@@ -296,11 +301,11 @@ else
 			out=\$(echo hello | nc -w2 127.0.0.1 $P 2>/dev/null)
 			kill \$srv 2>/dev/null
 			test \"\$out\" = hello"
-		tn "telnet 回环回显" "telnet 本地回显" sh -c "
+		tn telnet "telnet 本地回显" sh -c "
 			nc -l -p $P -e cat >/dev/null 2>&1 &
 			srv=\$!
 			sleep 0.3
-			out=\$(echo tlx | telnet 127.0.0.1 $P 2>/dev/null | tr -d '\r')
+			out=\$(echo tlx | timeout 5 telnet 127.0.0.1 $P 2>/dev/null | tr -d '\r')
 			kill \$srv 2>/dev/null
 			echo \"\$out\" | grep -q tlx"
 	else
@@ -323,18 +328,18 @@ else
 	fi
 	# TCP 客户端纯连接(无需服务端回显语义) — 用 nc -l 后台
 	t "tcp 双向 socket 基本" sh -c "
-		nc -l -p $((P+1)) >/tmp/ncout 2>&1 &
+		nc -l -p $((P+1)) >ncout 2>&1 &
 		srv=\$!
 		sleep 0.3
 		printf 'abc' | nc -w2 127.0.0.1 $((P+1)) >/dev/null 2>&1
 		sleep 0.2
 		kill \$srv 2>/dev/null
-		grep -q abc /tmp/ncout 2>/dev/null; rc=\$?
-		rm -f /tmp/ncout
+		grep -q abc ncout 2>/dev/null; rc=\$?
+		rm -f ncout
 		test \$rc = 0"
 	echo "      (网络组以 nc/telnet 本地回环为准, wget 走外网组可选)"
+	ts "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
 fi
-ts "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
 gsum
 
 GNO="H"

@@ -20,17 +20,10 @@ jobs:
     steps:
       - name: 检出源码
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: 检查 Shell 语法
+      - name: 语法、补丁序列与维护脚本回归
         shell: bash
         run: |
-          set -euo pipefail
-          for file in scripts/*.sh toolchain/*.sh install.sh assets/loaders/install-linux.sh; do
-            bash -n "$file"
-          done
-          for file in tests/*.sh; do
-            sh -n "$file"
-          done
-          sh -n scripts/bbcosmo lib/*.sh examples/*.sh
+          make check
           python3 -m py_compile tests/ci-platform-probe.py
 
   build:
@@ -51,7 +44,7 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: toolchain/cosmo
-          key: cosmo-toolchain-v3-${{ runner.os }}-${{ hashFiles('toolchain/*.sh', 'patches/cosmo/**/*') }}
+          key: cosmo-toolchain-v4-${{ runner.os }}-${{ hashFiles('toolchain/*.sh', 'scripts/patch-series.py', 'patches/cosmo/**/*') }}
       - name: 从锁定源码构建定制工具链
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -62,6 +55,8 @@ jobs:
           test -x toolchain/cosmo/bin/x86_64-unknown-cosmo-cc
           test -x toolchain/cosmo/bin/aarch64-unknown-cosmo-cc
           test -x toolchain/cosmo/bin/apelink
+      - name: 校验真实补丁结果与生成头文件
+        run: make fetch && make check
       - name: 构建双架构 BusyBox
         run: make build
       - name: 生成发布目录
@@ -94,6 +89,7 @@ jobs:
           echo "min top-level OK"
           BUSYBOX_COSMO_CACHE=/tmp/minchk-cache ./busybox sh -c 'echo x | grep -qE x && echo MIN-NESTED-OK'
           echo "min nested exec OK"
+          BUSYBOX_COSMO_CACHE=/tmp/minchk-cache ./busybox ash "$GITHUB_WORKSPACE/tests/ash-contract.sh"
       - name: 上传 min 包
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -195,15 +191,19 @@ jobs:
         working-directory: release
         env:
           BUSYBOX_COSMO_CACHE: ${{ runner.temp }}/busybox-cosmo-cache
+          BBTEST_NETWORK: "1"
         run: |
           set +e
+          ./busybox ash ash-contract.sh > "$RUNNER_TEMP/ash-contract.log" 2>&1
+          ash_rc=$?
+          cat "$RUNNER_TEMP/ash-contract.log"
           ./busybox sh deep-test.sh > "$RUNNER_TEMP/deep-test.log" 2>&1
           deep_rc=$?
           cat "$RUNNER_TEMP/deep-test.log"
           ./busybox sh smoke-full.sh > "$RUNNER_TEMP/smoke-full.log" 2>&1
           full_rc=$?
           cat "$RUNNER_TEMP/smoke-full.log"
-          test "$deep_rc" -eq 0 -a "$full_rc" -eq 0
+          test "$ash_rc" -eq 0 -a "$deep_rc" -eq 0 -a "$full_rc" -eq 0
       - name: 运行兼容库契约测试
         shell: bash
         working-directory: release
@@ -215,7 +215,11 @@ jobs:
           ./busybox sh portable-contract.sh > "$RUNNER_TEMP/portable-contract.log" 2>&1
           rc=$?
           cat "$RUNNER_TEMP/portable-contract.log"
-          test "$rc" -eq 0
+          ./busybox ash bbcosmo capabilities --format json > "$RUNNER_TEMP/capabilities.json"
+          capability_rc=$?
+          python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data["busybox.entry"] == "available"' "$RUNNER_TEMP/capabilities.json"
+          json_rc=$?
+          test "$rc" -eq 0 -a "$capability_rc" -eq 0 -a "$json_rc" -eq 0
       - name: 上传 Unix 平台证据
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -225,8 +229,10 @@ jobs:
             ${{ runner.temp }}/platform-info.txt
             ${{ runner.temp }}/platform-probe.log
             ${{ runner.temp }}/deep-test.log
+            ${{ runner.temp }}/ash-contract.log
             ${{ runner.temp }}/smoke-full.log
             ${{ runner.temp }}/portable-contract.log
+            ${{ runner.temp }}/capabilities.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -282,25 +288,36 @@ jobs:
       - name: 运行深度与完整测试
         shell: pwsh
         working-directory: release
+        env:
+          BBTEST_NETWORK: "1"
         run: |
+          & .\busybox.com ash ash-contract.sh *> "$env:RUNNER_TEMP/ash-contract.log"
+          $ashRc = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/ash-contract.log"
           & .\busybox.com sh deep-test.sh *> "$env:RUNNER_TEMP/deep-test.log"
           $deepRc = $LASTEXITCODE
           Get-Content "$env:RUNNER_TEMP/deep-test.log"
           & .\busybox.com sh smoke-full.sh *> "$env:RUNNER_TEMP/smoke-full.log"
           $fullRc = $LASTEXITCODE
           Get-Content "$env:RUNNER_TEMP/smoke-full.log"
+          if ($ashRc -ne 0) { exit $ashRc }
           if ($deepRc -ne 0) { exit $deepRc }
           if ($fullRc -ne 0) { exit $fullRc }
       - name: 运行兼容库契约测试
         shell: pwsh
         working-directory: release
         run: |
+          $ErrorActionPreference = "Stop"
           $env:BBP_BUSYBOX = (Join-Path (Get-Location) "busybox.com")
           $env:BUSYBOX_COSMO_CACHE = (Join-Path $env:RUNNER_TEMP "busybox-cosmo-contract-cache")
           & .\busybox.com sh portable-contract.sh *> "$env:RUNNER_TEMP/portable-contract.log"
           $contractRc = $LASTEXITCODE
           Get-Content "$env:RUNNER_TEMP/portable-contract.log"
+          & .\busybox.com ash bbcosmo capabilities --format json > "$env:RUNNER_TEMP/capabilities.json"
+          $capabilityRc = $LASTEXITCODE
+          Get-Content -Raw "$env:RUNNER_TEMP/capabilities.json" | ConvertFrom-Json | Out-Null
           if ($contractRc -ne 0) { exit $contractRc }
+          if ($capabilityRc -ne 0) { exit $capabilityRc }
       - name: 上传 Windows 平台证据
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -309,7 +326,9 @@ jobs:
           path: |
             ${{ runner.temp }}/platform-info.txt
             ${{ runner.temp }}/deep-test.log
+            ${{ runner.temp }}/ash-contract.log
             ${{ runner.temp }}/smoke-full.log
             ${{ runner.temp }}/portable-contract.log
+            ${{ runner.temp }}/capabilities.json
           if-no-files-found: warn
           retention-days: 14

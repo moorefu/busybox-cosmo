@@ -8,8 +8,7 @@
 #   2) 首跑把母本拷到 cache, 转成当前平台原生格式后运行
 #      mac Intel: fat 内置 --assimilate → Mach-O (全功能, 免外部工具)
 #      Linux     : 已注册 binfmt 则直跑; 否则 loader 形态 (顶层可用)
-#      mac arm64 : loader 形态 (顶层可用) — 全功能请用 Rosetta:
-#                  arch -x86_64 ./busybox   (见 docs/APPLE-SILICON-TEST.md)
+#      mac arm64 : 原生 loader 路径；仍按实验平台处理并运行 ash 契约
 #   3) 母本 (busybox-*.ape) 永远 pristine
 #
 # 子命令 (Linux):
@@ -225,7 +224,7 @@ if [ "$magic" = "4d5a7146" ]; then
   # APE 副本 → 找 loader 并用 '-' 模式 (argv[0]=busybox 真实路径, 类 binfmt P flag)
   #   让 busybox realpath(argv[0]) 成功 → STANDALONE 嵌套 exec 全功能
   #   这是 mac (含 Apple Silicon) 与 Linux 无 binfmt 时免 assimilate 的路径;
-  #   2026-09-04 静态分析, 真机待验证 (见 docs/APPLE-SILICON-TEST.md)
+  #   设计边界与实机状态见 docs/DEPLOYMENT.md、docs/TESTING.md
   LDR=""
   case "$OS-$ARCH" in
     macos-aarch64) for c in "$APELDR" "$HERE/ape-loader-macos-arm64" "$HERE/loaders/ape-loader-macos-arm64"; do
