@@ -27,7 +27,18 @@ bbtest_cleanup() {
   if [ "${KEEP_TEST_ROOT:-0}" = 1 ]; then
     echo "测试目录已保留: $TEST_ROOT" >&2
   else
-    rm -rf "$TEST_ROOT" || { echo "测试目录清理失败: $TEST_ROOT" >&2; exit 2; }
+    # Windows 上刚退出的子进程/重定向句柄可能短暂阻止目录删除。
+    # 有界重试既吸收这种关闭竞态，也避免永久锁定时无限等待。
+    BBTEST_CLEAN_TRY=0
+    while ! rm -rf "$TEST_ROOT" 2>/dev/null; do
+      BBTEST_CLEAN_TRY=$((BBTEST_CLEAN_TRY + 1))
+      if [ "$BBTEST_CLEAN_TRY" -ge 5 ]; then
+        echo "测试目录清理失败（已重试 $BBTEST_CLEAN_TRY 次）: $TEST_ROOT" >&2
+        [ "$BBTEST_EXIT" -ne 0 ] && exit "$BBTEST_EXIT"
+        exit 2
+      fi
+      sleep 1
+    done
   fi
   exit "$BBTEST_EXIT"
 }

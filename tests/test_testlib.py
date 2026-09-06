@@ -53,6 +53,26 @@ class TestLibraryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 143)
         self.assertEqual(files, [])
 
+    def test_cleanup_retries_transient_remove_failure(self):
+        result, files = self.run_script(
+            "attempts=0; "
+            "rm() { attempts=$((attempts + 1)); "
+            "  test \"$attempts\" -ge 3 && command rm \"$@\"; }; "
+            "sleep() { :; }; "
+            "bbtest_init selftest; printf data > value; exit 0"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(files, [])
+
+    def test_cleanup_failure_does_not_hide_test_failure(self):
+        result, files = self.run_script(
+            "rm() { return 1; }; sleep() { :; }; "
+            "bbtest_init selftest; exit 23"
+        )
+        self.assertEqual(result.returncode, 23)
+        self.assertIn("已重试 5 次", result.stderr)
+        self.assertEqual(len(files), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
