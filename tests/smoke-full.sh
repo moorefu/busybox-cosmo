@@ -133,7 +133,14 @@ t "mv 跨目录" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo m>"$d/f" && mv
 t "ln 硬链接" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo l>"$d/h" && ln "$d/h" "$d/i" && test "$d/h" -ef "$d/i" && rm -rf "$d"'
 t "ln -s 符号链接" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo s>"$d/r" && ln -sfn r "$d/s" && test -e "$d/s" && rm -rf "$d"'
 t "dd bs/count/seek" sh -c 'printf xxxxxxxx | dd bs=2 count=4 2>/dev/null | wc -c | grep -q 8'
-t "/dev/zero + dd 写文件大小" sh -c 'dd if=/dev/zero of=sf.bin bs=100 count=3 2>/dev/null && test "$(wc -c <sf.bin)" = 300 && rm -f sf.bin'
+t "/dev/zero + dd 写文件大小" sh -c '
+	rm -f sf.bin dd.err
+	dd if=/dev/zero of=sf.bin bs=100 count=3 2>dd.err; dd_rc=$?
+	size=$(wc -c <sf.bin 2>/dev/null) || size=missing
+	if [ "$dd_rc" = 0 ] && [ "$size" = 300 ]; then rm -f sf.bin dd.err; exit 0; fi
+	echo "dd_rc=$dd_rc size=$size" >&2; cat dd.err >&2; rm -f sf.bin dd.err; exit 1
+'
+t "写入 /dev/zero 被丢弃" sh -c 'printf x >/dev/zero'
 t "ls -l 可读" sh -c 'touch sf.f && ls -l sf.f | grep -q -- "-rw" && rm -f sf.f'
 t "ls -a 隐藏" sh -c 'touch .sfh && ls -a | grep -q ".sfh" && rm -f .sfh'
 t "stat 文件" sh -c 'touch sf.f && stat sf.f >/dev/null 2>&1 && rm -f sf.f'

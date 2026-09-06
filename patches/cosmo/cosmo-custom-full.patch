@@ -2,12 +2,12 @@
 # busybox-cosmo: cosmopolitan master 定制补丁 (权威版, 2026-09-03)
 #   基座: jart/cosmopolitan @ 3293fad0a9eac7865c019be98fb993eeb933405e
 #   应用: 在 cosmopolitan master 源码树根执行  patch -p1 < 本文件
-#   内容(17 文件):
-#     1. /dev/zero Windows 虚拟       libc/... (kFdDevZero=11, 13 文件)
+#   内容(20 文件):
+#     1. /dev/zero Windows 虚拟       libc/... (kFdDevZero=11, 16 文件)
 #     2. mac 自身路径根治             libc/calls/getprogramexecutablename.greg.c
 #     3. QuickEdit 鼠标保留           libc/calls/tcsetattr-nt.c
 #     4. 64K 页支持(链接/嵌入)        ape/BUILD.mk + tool/build/apelink.c
-#   与 patches/cosmo/master-snapshot/ 等价 (该目录为成品文件覆盖形态)
+#   应用顺序以 patches/cosmo/series 为准，不再维护成品文件覆盖快照
 # ============================================================
 --- a/ape/BUILD.mk
 +++ b/ape/BUILD.mk
@@ -20,6 +20,16 @@
  
  APE_LOADER_FLAGS =				\
  	-DNDEBUG				\
+--- a/libc/calls/close.c
++++ b/libc/calls/close.c
+@@ -75,6 +75,7 @@
+ #endif
+ #if SupportsWindows()
+     case kFdDevRandom:
++    case kFdDevZero:
+       break;
+     case kFdFile:
+       if (!__vforked)
 --- a/libc/calls/fstat-nt.c
 +++ b/libc/calls/fstat-nt.c
 @@ -63,6 +63,7 @@
@@ -118,6 +128,18 @@
      if (!strcmp(file + 5, "stdin"))
        return sys_open_nt_dup(fd, flags, mode, STDIN_FILENO);
      if (!strcmp(file + 5, "stdout"))
+--- a/libc/calls/poll-nt.c
++++ b/libc/calls/poll-nt.c
+@@ -124,7 +124,8 @@
+         fileindices[pn] = i;
+         filehands[pn] = __get_pib()->fds.p[fds[i].fd].handle;
+         ++pn;
+-      } else if (kind == kFdDevNull || kind == kFdDevRandom || kind == kFdZip) {
++      } else if (kind == kFdDevNull || kind == kFdDevRandom ||
++                 kind == kFdDevZero || kind == kFdZip) {
+         // we can't wait on these kinds via win32
+         if (fds[i].events & (POLLRDNORM_ | POLLWRNORM_)) {
+           // the linux kernel does this irrespective of oflags
 --- a/libc/calls/pread.c
 +++ b/libc/calls/pread.c
 @@ -76,7 +76,7 @@
@@ -129,14 +151,26 @@
      rc = sys_read_nt(fd, (struct iovec[]){{buf, size}}, 1, offset);
    } else {
      rc = ebadf();
+--- a/libc/calls/pwrite.c
++++ b/libc/calls/pwrite.c
+@@ -68,7 +68,7 @@
+   } else if (__isfdkind(fd, kFdSocket)) {
+     rc = espipe();
+   } else if (__isfdkind(fd, kFdFile) || __isfdkind(fd, kFdDevNull) ||
+-             __isfdkind(fd, kFdDevRandom)) {
++             __isfdkind(fd, kFdDevRandom) || __isfdkind(fd, kFdDevZero)) {
+     rc = sys_write_nt(fd, (struct iovec[]){{(void *)buf, size}}, 1, offset);
+   } else {
+     return ebadf();
 --- a/libc/calls/printfds.c
 +++ b/libc/calls/printfds.c
-@@ -41,6 +41,7 @@
+@@ -41,6 +41,8 @@
      case kFdEpoll:
        return "kFdEpoll";
      case kFdDevRandom:
-+    case kFdDevZero:
        return "kFdRandom";
++    case kFdDevZero:
++      return "kFdZero";
      default:
        return "kFdWut";
 --- a/libc/calls/read-nt.c
@@ -191,13 +225,15 @@
    if (!(tio->c_iflag & ICRNL))
 --- a/libc/calls/write-nt.c
 +++ b/libc/calls/write-nt.c
-@@ -64,6 +64,7 @@
+@@ -64,6 +64,9 @@
        isconsole = true;
        break;
      case kFdDevRandom:
-+    case kFdDevZero:
        // not implemented, XNU returns eperm();
        return eperm();
++    case kFdDevZero:
++      // Linux /dev/zero accepts writes and discards their contents.
++      return size;
      default:
 --- a/libc/calls/writev-nt.c
 +++ b/libc/calls/writev-nt.c
