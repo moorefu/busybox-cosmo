@@ -286,9 +286,9 @@ else
 fi
 t "kill -0 探测" sh -c 'kill -0 $$ 2>/dev/null'
 if bbp_process_search_available; then
-	t "pgrep/pidof 名称搜索" bbp_process_search_available
+	t "pgrep -f 名称搜索" bbp_process_search_available
 else
-	ws "pgrep/pidof 名称搜索" "当前宿主没有可用 /proc 名称搜索；脚本应保存子进程 PID"
+	ws "pgrep -f 名称搜索" "当前宿主没有可用 /proc 命令行搜索；脚本应保存子进程 PID"
 fi
 t "nproc CPU 数量及 ignore 边界" sh -c '
 	n=$(nproc) && all=$(nproc --all) && zero=$(nproc --ignore=0) && one=$(nproc --ignore=1) && huge=$(nproc --ignore=999999) || exit

@@ -299,26 +299,22 @@ bbp_pid_alive() {
 }
 
 # 名称搜索是可选能力：Linux /proc 通常可用，macOS/Windows 不据 applet
-# 清单猜测。探针启动唯一标记的子进程，并要求 pgrep 与 pidof 都找到其 PID。
+# 清单猜测。探针启动唯一标记的子进程，并要求 pgrep -f 找到其 PID；pidof
+# 依赖宿主暴露的进程名，不能代表通用的命令行名称搜索能力。
 bbp_process_search_available() {
 	(
-		bbp_require sh sleep kill pgrep pidof >/dev/null 2>&1 || exit 1
+		bbp_require sh sleep kill pgrep >/dev/null 2>&1 || exit 1
 		bbp_probe_marker=bbp-process-probe-$$
 		# 末尾的 ':' 防止 ash 直接 exec sleep，确保标记保留在 shell argv。
 		bbp sh -c 'sleep 10; :' "$bbp_probe_marker" >/dev/null 2>&1 &
 		bbp_probe_pid=$!
 		trap 'bbp kill "$bbp_probe_pid" >/dev/null 2>&1 || true; wait "$bbp_probe_pid" 2>/dev/null || true' 0 1 2 3 15
 		bbp_probe_pgrep=$(bbp pgrep -f "$bbp_probe_marker" 2>/dev/null) || exit 1
-		bbp_probe_pidof=$(bbp pidof sh 2>/dev/null) || exit 1
 		bbp_probe_seen_pgrep=0
 		for bbp_probe_item in $bbp_probe_pgrep; do
 			[ "$bbp_probe_item" = "$bbp_probe_pid" ] && bbp_probe_seen_pgrep=1
 		done
-		bbp_probe_seen_pidof=0
-		for bbp_probe_item in $bbp_probe_pidof; do
-			[ "$bbp_probe_item" = "$bbp_probe_pid" ] && bbp_probe_seen_pidof=1
-		done
-		[ "$bbp_probe_seen_pgrep" = 1 ] && [ "$bbp_probe_seen_pidof" = 1 ]
+		[ "$bbp_probe_seen_pgrep" = 1 ]
 	)
 }
 
