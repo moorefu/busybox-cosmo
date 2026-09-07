@@ -18,6 +18,24 @@
 能追溯到固定版本或提交、记录 SHA-256 和许可证，并在 CI 中从源码复现。Cosmos
 4.0.2 的版本目录可作为交叉测试基线，但其中没有 `xz`，不能独立满足 P0。
 
+## macOS 签名
+
+macOS（尤其 Apple Silicon 原生执行与 Gatekeeper）要求可执行文件带代码签名。
+交付物默认未签名；本机/契约前用 ad-hoc 签名即可运行：
+
+```sh
+make sign-macos            # 或 scripts/sign-macos.sh [--identity ID] [文件...]
+```
+
+- ad-hoc（`-`）免费、无需开发者账号，`codesign --force --sign - --timestamp=none`；
+- CI：unix-matrix 的 macOS runner 会在跑契约前对 `release/` 与 `companion-tools/` 下的
+  `*.com/*.ape/assimilate` 做 ad-hoc 签名；
+- 对外分发若要免「右键打开」警告，需证书持有者做 Developer ID 签名并公证
+  （`scripts/sign-macos.sh --identity "Developer ID Application: …"` 后再
+  `xcrun notarytool submit --wait`，需 Apple 开发者凭据，CI 不做公证）；
+- 分层包 zip 保持未签名以维持逐位可复现，解压后先跑 `make sign-macos`（或对解压目录
+  执行 `scripts/sign-macos.sh`）再运行。
+
 ## 运行时规则
 
 默认查找顺序是：显式 `BBP_*` 绝对路径、发行包 `tools/`、宿主 `PATH`。显式路径
