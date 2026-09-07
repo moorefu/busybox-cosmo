@@ -198,17 +198,14 @@ if BBTEST_XZ_ENCODER=$(bbp_external_xz 2>/dev/null) && bbp_xz_encode_available; 
 	BBTEST_TAR_PATH="$BBTEST_XZ_DIR:${PATH:-}"
 	export BBTEST_XZ_ENCODER BBTEST_TAR_PATH
 	t "tar cJf (外部 xz)" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo x>"$d/f" && PATH="$BBTEST_TAR_PATH" tar cJf sf.txz "$d" 2>/dev/null && tar xJf sf.txz -O "$d/f" 2>/dev/null | grep -q x && rm -rf "$d" sf.txz'
+	t "xz 往返" sh -c 'echo data | "$BBTEST_XZ_ENCODER" -c > sf.xz && xzcat sf.xz | grep -q data && rm -f sf.xz'
 else
 	ws "tar cJf (外部 xz)" "未找到能编码的外部 xz；BusyBox xz 仅用于解码"
+	ws "xz 往返" "BusyBox xz 仅解码，未找到通过往返验证的外部 xz"
 fi
 t "gzip 往返" sh -c 'echo data | gzip -c > sf.gz && gzip -dc sf.gz | grep -q data && rm -f sf.gz'
 t "gzip 多级压缩" sh -c 'echo data | gzip -9 -c > sf.gz && gzip -dc sf.gz | grep -q data && rm -f sf.gz'
 t "bzip2 往返" sh -c 'echo data | bzip2 -c > sf.bz2 && bunzip2 -c sf.bz2 | grep -q data && rm -f sf.bz2'
-if [ -n "${BBTEST_XZ_ENCODER:-}" ]; then
-	t "xz 往返" sh -c 'echo data | "$BBTEST_XZ_ENCODER" -c > sf.xz && xzcat sf.xz | grep -q data && rm -f sf.xz'
-else
-	ws "xz 往返" "BusyBox xz 仅解码，未找到可编码的外部 xz"
-fi
 if BBTEST_LZMA_ENCODER=$(bbp_external_lzma 2>/dev/null) && bbp_lzma_encode_available; then
 	export BBTEST_LZMA_ENCODER
 	t "lzma 往返" sh -c 'echo data | "$BBTEST_LZMA_ENCODER" -c > sf.lzma && unlzma -c sf.lzma 2>/dev/null | grep -q data && rm -f sf.lzma'
