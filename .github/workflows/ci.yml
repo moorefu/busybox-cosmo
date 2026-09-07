@@ -22,9 +22,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: 语法、补丁序列与维护脚本回归
         shell: bash
-        run: |
-          make check
-          python3 -m py_compile tests/ci-platform-probe.py
+        run: make check
 
   build:
     name: 构建
@@ -128,18 +126,30 @@ jobs:
           - name: Linux x86_64
             runner: ubuntu-24.04
             arch: x86_64
+            os_family: linux
+            capability_arch: x86_64
+            name_search: builtin
             experimental: false
           - name: macOS x86_64
             runner: macos-15-intel
             arch: x86_64
+            os_family: macos
+            capability_arch: x86_64
+            name_search: unsupported
             experimental: false
           - name: Linux ARM64
             runner: ubuntu-24.04-arm
             arch: aarch64
+            os_family: linux
+            capability_arch: aarch64
+            name_search: builtin
             experimental: false
           - name: macOS ARM64（实验）
             runner: macos-15
             arch: arm64
+            os_family: macos
+            capability_arch: aarch64
+            name_search: unsupported
             experimental: true
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -217,9 +227,12 @@ jobs:
           cat "$RUNNER_TEMP/portable-contract.log"
           ./busybox ash bbcosmo capabilities --format json > "$RUNNER_TEMP/capabilities.json"
           capability_rc=$?
-          python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data["busybox.entry"] == "available"' "$RUNNER_TEMP/capabilities.json"
-          json_rc=$?
-          test "$rc" -eq 0 -a "$capability_rc" -eq 0 -a "$json_rc" -eq 0
+          python3 ci-capability-gate.py "$RUNNER_TEMP/capabilities.json" \
+            --os '${{ matrix.os_family }}' \
+            --arch '${{ matrix.capability_arch }}' \
+            --name-search '${{ matrix.name_search }}'
+          gate_rc=$?
+          test "$rc" -eq 0 -a "$capability_rc" -eq 0 -a "$gate_rc" -eq 0
       - name: 上传 Unix 平台证据
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -245,10 +258,14 @@ jobs:
           - name: Windows x86_64
             runner: windows-2022
             arch: AMD64
+            capability_arch: x86_64
+            name_search: unsupported
             experimental: false
           - name: Windows ARM64（x86_64 仿真，实验）
             runner: windows-11-arm
             arch: ARM64
+            capability_arch: x86_64
+            name_search: unsupported
             experimental: true
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -315,9 +332,14 @@ jobs:
           Get-Content "$env:RUNNER_TEMP/portable-contract.log"
           & .\busybox.com ash bbcosmo capabilities --format json > "$env:RUNNER_TEMP/capabilities.json"
           $capabilityRc = $LASTEXITCODE
-          Get-Content -Raw "$env:RUNNER_TEMP/capabilities.json" | ConvertFrom-Json | Out-Null
+          python .\ci-capability-gate.py "$env:RUNNER_TEMP/capabilities.json" `
+            --os windows `
+            --arch '${{ matrix.capability_arch }}' `
+            --name-search '${{ matrix.name_search }}'
+          $gateRc = $LASTEXITCODE
           if ($contractRc -ne 0) { exit $contractRc }
           if ($capabilityRc -ne 0) { exit $capabilityRc }
+          if ($gateRc -ne 0) { exit $gateRc }
       - name: 上传 Windows 平台证据
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

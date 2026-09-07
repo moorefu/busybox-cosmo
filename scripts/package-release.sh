@@ -102,6 +102,7 @@ cp "$ROOT/lib/portable.sh" "$OUT/release/lib/portable.sh"
 cp "$ROOT/scripts/bbcosmo" "$OUT/release/bbcosmo" && chmod 755 "$OUT/release/bbcosmo"
 cp "$ROOT/examples/portable-menu.sh" "$OUT/release/examples/portable-menu.sh" && chmod 755 "$OUT/release/examples/portable-menu.sh"
 cp "$ROOT/tests/portable-contract.sh" "$OUT/release/portable-contract.sh"
+cp "$ROOT/tests/ci-capability-gate.py" "$OUT/release/ci-capability-gate.py"
 cp "$ROOT/docs/DEPLOYMENT.md" "$ROOT/docs/KNOWN-LIMITATIONS.md" \
   "$ROOT/docs/TESTING.md" "$ROOT/docs/ROADMAP.md" "$ROOT/docs/COSMO-ABI-CONTRACTS.md" \
   "$ROOT/docs/RUN-NO-SELF-MODIFY.md" "$OUT/release/"

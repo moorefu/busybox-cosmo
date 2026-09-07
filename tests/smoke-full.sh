@@ -7,14 +7,23 @@
 #  - 覆盖分 10 组, 每项验证输出/语义(不只退出码)
 #  - 自洽: 网络组全部走本地回环 (nc/telnet), 不依赖外网
 #  - 自适应: 按 `busybox --list` 自动 SKIP 未编译的 applet
-#  - 平台软失败标 [soft]: 环境相关(如 mac 沙箱禁止 exec /bin/ps)
-#  - 汇总: 每组分项 + 总数/通过/跳过/失败, 任意硬失败 => rc 1
+#  - 平台差异必须是已知 SKIP 或能力探测，不设模糊的 SOFT 类别
+#  - 汇总: 每组分项 + 总数/通过/跳过/失败, 任意失败 => rc 1
 # ============================================================
-PASS=0; FAIL=0; SKIP=0; SOFT=0
+PASS=0; FAIL=0; SKIP=0
 LIST=""
 TM_SEQ=0
 
-. "$(dirname "$0")/testlib.sh"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/testlib.sh"
+if [ -f "$SCRIPT_DIR/../lib/portable.sh" ]; then
+	PORTABLE_LIB="$SCRIPT_DIR/../lib/portable.sh"
+else
+	PORTABLE_LIB="$SCRIPT_DIR/lib/portable.sh"
+fi
+[ -f "$PORTABLE_LIB" ] || { echo "FAIL: 缺少 portable.sh: $PORTABLE_LIB" >&2; exit 2; }
+BBP_BUSYBOX=${BBP_BUSYBOX:-busybox}
+. "$PORTABLE_LIB"
 bbtest_init smoke
 
 # 平台判定: cosmo Windows 的 uname -s = "Windows"
@@ -44,7 +53,7 @@ $1
 }
 
 # 组计数
-g_PASS=0; g_FAIL=0; g_SKIP=0; g_SOFT=0
+g_PASS=0; g_FAIL=0; g_SKIP=0
 
 # 硬测试: 失败即 FAIL
 t() {
@@ -70,15 +79,6 @@ tn() { # tn <applet> <desc> <cmd...>
 	fi
 	t "$desc" "$@"
 }
-# 软测试(平台/环境差异), 失败记 SOFT 不使套件失败
-ts() {
-	desc="$1"; shift
-	if bbtest_try "$@"; then
-		echo "PASS: $desc"; PASS=$((PASS+1)); g_PASS=$((g_PASS+1))
-	else
-		echo "SOFT: $desc"; SOFT=$((SOFT+1)); g_SOFT=$((g_SOFT+1))
-	fi
-}
 # 输出式断言: 期望 stdout 匹配 grep 模式
 tm() { # tm <desc> <pattern> <cmd...>
 	desc="$1"; pat="$2"; shift 2
@@ -103,10 +103,10 @@ ws() { # ws <desc> <原因>
 group() {
 	[ "$1" != "" ] && echo ""
 	echo "===== 组 $GNO: $1 ====="
-	g_PASS=0; g_FAIL=0; g_SKIP=0; g_SOFT=0
+	g_PASS=0; g_FAIL=0; g_SKIP=0
 }
 gsum() {
-	echo "  -- 组小计: PASS=$g_PASS FAIL=$g_FAIL SKIP=$g_SKIP SOFT=$g_SOFT"
+	echo "  -- 组小计: PASS=$g_PASS FAIL=$g_FAIL SKIP=$g_SKIP"
 }
 
 GNO="A"
@@ -119,9 +119,9 @@ for a in ash sh cat ls cp mv rm mkdir ln echo printf test grep sed awk \
          sort uniq wc head tail cut tr od gzip gunzip bzip2 xz tar find \
          xargs sleep timeout kill env date dd df stat du vi make nc telnet; do
 	if have "$a"; then
-		echo "PASS: applet=$a"; PASS=$((PASS+1))
+		echo "PASS: applet=$a"; PASS=$((PASS+1)); g_PASS=$((g_PASS+1))
 	else
-		echo "SKIP: applet=$a 未编译"; SKIP=$((SKIP+1))
+		echo "SKIP: applet=$a 未编译"; SKIP=$((SKIP+1)); g_SKIP=$((g_SKIP+1))
 	fi
 done
 gsum
@@ -193,29 +193,34 @@ GNO="D"
 group "归档与压缩"
 t "tar czf/解出" sh -c 'd=sf.d; rm -rf "$d" && mkdir -p "$d/sub" && echo data>"$d/sub/f" && tar czf sf.tgz "$d" && tar xzf sf.tgz -O "$d/sub/f" 2>/dev/null | grep -q data && rm -rf "$d" sf.tgz'
 t "tar cjf (bzip2)" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo b>"$d/f" && tar cjf sf.tbz "$d" 2>/dev/null && tar xjf sf.tbz -O "$d/f" 2>/dev/null | grep -q b && rm -rf "$d" sf.tbz'
-if printf x | xz -c 2>/dev/null | xz -d 2>/dev/null | grep -q x; then
-	t "tar cJf (外部 xz)" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo x>"$d/f" && tar cJf sf.txz "$d" 2>/dev/null && tar xJf sf.txz -O "$d/f" 2>/dev/null | grep -q x && rm -rf "$d" sf.txz'
+if BBTEST_XZ_ENCODER=$(bbp_external_xz 2>/dev/null) && bbp_xz_encode_available; then
+	BBTEST_XZ_DIR=${BBTEST_XZ_ENCODER%/*}
+	BBTEST_TAR_PATH="$BBTEST_XZ_DIR:${PATH:-}"
+	export BBTEST_XZ_ENCODER BBTEST_TAR_PATH
+	t "tar cJf (外部 xz)" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo x>"$d/f" && PATH="$BBTEST_TAR_PATH" tar cJf sf.txz "$d" 2>/dev/null && tar xJf sf.txz -O "$d/f" 2>/dev/null | grep -q x && rm -rf "$d" sf.txz'
 else
 	ws "tar cJf (外部 xz)" "未找到能编码的外部 xz；BusyBox xz 仅用于解码"
 fi
 t "gzip 往返" sh -c 'echo data | gzip -c > sf.gz && gzip -dc sf.gz | grep -q data && rm -f sf.gz'
 t "gzip 多级压缩" sh -c 'echo data | gzip -9 -c > sf.gz && gzip -dc sf.gz | grep -q data && rm -f sf.gz'
 t "bzip2 往返" sh -c 'echo data | bzip2 -c > sf.bz2 && bunzip2 -c sf.bz2 | grep -q data && rm -f sf.bz2'
-if printf x | xz -c 2>/dev/null | xz -d 2>/dev/null | grep -q x; then
-	t "xz 往返" sh -c 'echo data | xz -c > sf.xz && xzcat sf.xz | grep -q data && rm -f sf.xz'
+if [ -n "${BBTEST_XZ_ENCODER:-}" ]; then
+	t "xz 往返" sh -c 'echo data | "$BBTEST_XZ_ENCODER" -c > sf.xz && xzcat sf.xz | grep -q data && rm -f sf.xz'
 else
 	ws "xz 往返" "BusyBox xz 仅解码，未找到可编码的外部 xz"
 fi
-if printf x | lzma -c 2>/dev/null | unlzma -c 2>/dev/null | grep -q x; then
-	t "lzma 往返" sh -c 'echo data | lzma -c > sf.lzma && unlzma -c sf.lzma 2>/dev/null | grep -q data && rm -f sf.lzma'
+if BBTEST_LZMA_ENCODER=$(bbp_external_lzma 2>/dev/null) && bbp_lzma_encode_available; then
+	export BBTEST_LZMA_ENCODER
+	t "lzma 往返" sh -c 'echo data | "$BBTEST_LZMA_ENCODER" -c > sf.lzma && unlzma -c sf.lzma 2>/dev/null | grep -q data && rm -f sf.lzma'
 else
 	ws "lzma 往返" "BusyBox lzma 仅解码，未找到可编码的外部 lzma"
 fi
 t "cpio 打包解出" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo c>"$d/f" && (cd "$d" && echo f | cpio -o -H newc 2>/dev/null) > sf.cpio && rm -rf "$d/out" && mkdir "$d/out" && (cd "$d/out" && cpio -i -d -F ../../sf.cpio 2>/dev/null) && grep -q c "$d/out/f" && rm -rf "$d" sf.cpio'
-if have unzip && have zip; then
-	t "unzip/zip 往返" sh -c 'rm -rf sf.zipx && mkdir sf.zipx && echo z > sf.zipx/f && (cd sf.zipx && zip -q ../sf.zip f) && mkdir sf.unzipx && (cd sf.unzipx && unzip -q ../sf.zip) && cmp sf.zipx/f sf.unzipx/f && rm -rf sf.zipx sf.unzipx sf.zip'
+if BBTEST_ZIP_ENCODER=$(bbp_external_zip 2>/dev/null) && bbp_zip_encode_available; then
+	export BBTEST_ZIP_ENCODER
+	t "unzip/zip 往返" sh -c 'rm -rf sf.zipx && mkdir sf.zipx && echo z > sf.zipx/f && (cd sf.zipx && "$BBTEST_ZIP_ENCODER" -q ../sf.zip f) && mkdir sf.unzipx && (cd sf.unzipx && unzip -q ../sf.zip) && cmp sf.zipx/f sf.unzipx/f && rm -rf sf.zipx sf.unzipx sf.zip'
 else
-	ws "unzip/zip 往返" "需要同时编译 zip 与 unzip applet"
+	ws "unzip/zip 往返" "未找到通过往返验证的外部 zip 编码器"
 fi
 t "ar 创建/列出/解出" sh -c 'echo hi > sf.txt && ar r sf.a sf.txt && ar t sf.a | grep -q sf.txt && mkdir -p sf.arx && (cd sf.arx && ar x ../sf.a) && grep -q hi sf.arx/sf.txt && rm -rf sf.txt sf.a sf.arx'
 gsum
@@ -255,11 +260,11 @@ gsum
 GNO="F"
 group "进程/系统/信息"
 tm "id -u 数字" "^[0-9]+$" id -u
-ts "whoami 非空(平台/沙箱)" sh -c 'whoami 2>/dev/null | grep -q .'
+t "whoami 用户名" bbp_username
 tm "env 变量透传" "FOO=bar" sh -c 'FOO=bar env | grep FOO=bar'
 tm "printenv" "bar" sh -c 'FOO=bar printenv FOO'
 tm "uname -m/-s/-r" "." sh -c 'uname -m; uname -s; uname -r | grep -q .'
-ts "arch(输出架构)" sh -c 'arch 2>/dev/null | grep -q .'
+t "arch(输出架构)" sh -c 'arch 2>/dev/null | grep -q .'
 t "sleep 0.5 后继续" sh -c 'sleep 0.5 && echo ok | grep -q ok'
 tm "date 格式" "^20[0-9][0-9]-" sh -c 'date +%Y-%m-%d'
 t "date -u UTC" sh -c 'date -u | grep -qiE "UTC|GMT"'
@@ -270,15 +275,29 @@ else
 fi
 t "free 内存行" sh -c 'free 2>/dev/null | grep -q "Mem:"'
 t "uptime" sh -c 'uptime 2>/dev/null | grep -qiE "up|min|day|load"'
-ts "ps (平台/沙箱软项)" sh -c 'ps -o pid= 2>/dev/null | head -1 | grep -qE "^[0-9]" || ps | head -2 | grep -qiE "pid|cmd"'
+t "ps 基本进程表" sh -c 'ps -o pid= 2>/dev/null | head -1 | grep -qE "^[[:space:]]*[0-9]" || ps | head -2 | grep -qiE "pid|cmd"'
 t "hostname 显示" sh -c 'hostname 2>/dev/null | grep -q .'
-ts "hostname -s 短名" sh -c 'h=$(hostname -s 2>/dev/null); test -n "$h"'
-ts "dnsdomainname 可执行" sh -c 'dnsdomainname >/dev/null 2>&1'
-ts "kill 自身信号(TERM)" sh -c 'sh -c "kill -TERM \$\$" 2>/dev/null; r=$?; test $r = 143 -o $r = 0'
+t "hostname -s 短名" sh -c 'h=$(hostname -s 2>/dev/null); test -n "$h"'
+t "dnsdomainname（空域名有效）" bbp_dns_domain
+if [ "$IS_WIN" = 1 ]; then
+	ws "kill 自身信号(TERM)" "win: 信号退出状态不属于 POSIX 一致能力"
+else
+	t "kill 自身信号(TERM)" sh -c 'rm -f signal-survived; sh -c "kill -TERM \$\$; echo survived > signal-survived" 2>/dev/null; r=$?; test "$r" = 143 && test ! -e signal-survived'
+fi
 t "kill -0 探测" sh -c 'kill -0 $$ 2>/dev/null'
-ts "pgrep/pidof(需 /proc, 平台软项)" sh -c 'pgrep -f smoke-full >/dev/null 2>&1 || pgrep sh >/dev/null 2>&1 || pidof sh >/dev/null 2>&1'
-ts "nproc(cosmo 上游缺口或可用)" sh -c 'nproc 2>/dev/null | grep -qE "^[0-9]+$"'
-ts "uptime -s 启动时间" sh -c 'uptime -s 2>/dev/null | grep -qE "^20[0-9][0-9]-"'
+if bbp_process_search_available; then
+	t "pgrep/pidof 名称搜索" bbp_process_search_available
+else
+	ws "pgrep/pidof 名称搜索" "当前宿主没有可用 /proc 名称搜索；脚本应保存子进程 PID"
+fi
+t "nproc CPU 数量及 ignore 边界" sh -c '
+	n=$(nproc) && all=$(nproc --all) && zero=$(nproc --ignore=0) && one=$(nproc --ignore=1) && huge=$(nproc --ignore=999999) || exit
+	case "$n:$all:$zero:$one:$huge" in *[!0-9:]*) exit 1 ;; esac
+	[ "$n" -ge 1 ] && [ "$all" -ge 1 ] && [ "$zero" -eq "$n" ] || exit
+	if [ "$n" -gt 1 ]; then [ "$one" -eq $((n - 1)) ]; else [ "$one" -eq 1 ]; fi
+	[ "$huge" -eq 1 ]
+'
+t "uptime -s 启动时间" sh -c 'uptime -s 2>/dev/null | grep -qE "^20[0-9][0-9]-"'
 t "stat 自身" sh -c 'stat / >/dev/null 2>&1 || stat . >/dev/null 2>&1'
 gsum
 
@@ -297,7 +316,7 @@ elif [ "$IS_WIN" = 1 ]; then
 	ws "telnet 本地回显" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
 	ws "tcp 双向 socket" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
 	echo "      (Windows: 网络组以 nslookup 客户端为准; nc/telnet/tcp 服务端缺口见 KNOWN-LIMITATIONS)"
-	ts "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
+	t "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
 else
 	# 简易回显服务器: busybox nc -l -p -e cat(若 -e 支持) 否则退化为只测连接
 	if nc -h 2>&1 | grep -q '\-e'; then
@@ -325,13 +344,7 @@ else
 			r=\$?
 			kill \$srv 2>/dev/null
 			test \$r = 0"
-		ts "telnet 连接握手(soft)" sh -c "
-			nc -l -p $P >/dev/null 2>&1 &
-			srv=\$!
-			sleep 0.3
-			echo q | telnet 127.0.0.1 $P 2>/dev/null; r=\$?
-			kill \$srv 2>/dev/null
-			test \$r = 0"
+		ws "telnet 连接握手" "nc 不支持 -e，当前用例无法断言回显语义"
 	fi
 	# TCP 客户端纯连接(无需服务端回显语义) — 用 nc -l 后台
 	t "tcp 双向 socket 基本" sh -c "
@@ -345,7 +358,7 @@ else
 		rm -f ncout
 		test \$rc = 0"
 	echo "      (网络组以 nc/telnet 本地回环为准, wget 走外网组可选)"
-	ts "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
+	t "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
 fi
 gsum
 
@@ -392,13 +405,12 @@ echo "=================================================="
 echo "  完整冒烟结果:"
 echo "    总通过 PASS : $PASS"
 echo "    总失败 FAIL : $FAIL"
-echo "    跳过 SKIP   : $SKIP   (未编译/不支持)"
-echo "    软失败 SOFT : $SOFT   (平台/环境差异)"
+echo "    跳过 SKIP   : $SKIP   (未编译/经行为探测确认不支持)"
 echo "=================================================="
 if [ "$FAIL" -gt 0 ]; then
 	echo "结果: 存在 FAIL, 见上(rc=1)"
 	exit 1
 else
-	echo "结果: 全部通过/软失败 (rc=0)"
+	echo "结果: 全部通过或明确跳过 (rc=0)"
 	exit 0
 fi
