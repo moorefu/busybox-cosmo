@@ -1,5 +1,5 @@
 # busybox-cosmo 工程便捷入口 (底层请直接调用 scripts/*.sh / toolchain/*.sh)
-.PHONY: help fetch build x86_64 aarch64 fat bbtty bbtty-check xz zip zstd curl companion-check cacert https-kat qa-local package archive-package net-package sign-macos smoke smokefull clean distclean \
+.PHONY: help fetch build x86_64 aarch64 fat bbtty bbtty-check xz zip zstd curl companion-check cacert https-kat qa-local package archive-package net-package sign-macos notarize-macos smoke smokefull clean distclean \
         toolchain-copy toolchain-fetch toolchain-build toolchain-verify portable-check check test
 
 BUSYBOX ?= $(CURDIR)/dist/release/release/busybox
@@ -30,6 +30,7 @@ help:
 	@echo "make https-kat        — 本地 TLS KAT (tests/https-kat.py, 需宿主 curl+openssl)"
 	@echo "make qa-local          — 本地交付 QA 门禁 (scripts/qa-local.sh, 需全部产物)"
 	@echo "make sign-macos        — macOS ad-hoc 签名 dist 下 APE/com 产物"
+	@echo "make notarize-macos    — Developer ID 签名+公证 (需证书与 Apple 凭据, 本机执行)"
 	@echo "make build            — x86_64 + aarch64 + fat 全量"
 	@echo "make package          — 生成发布包 (dist/busybox-cosmo-release.zip)"
 	@echo "make archive-package  — 分层 busybox-archive 包 (busybox+xz/zip/zstd)"
@@ -120,6 +121,9 @@ qa-local:
 
 sign-macos:
 	scripts/sign-macos.sh
+
+notarize-macos:
+	scripts/notarize-macos.sh
 
 smoke:
 	"$(BUSYBOX)" ash tests/smoke.sh

@@ -30,9 +30,11 @@ make sign-macos            # 或 scripts/sign-macos.sh [--identity ID] [文件..
 - ad-hoc（`-`）免费、无需开发者账号，`codesign --force --sign - --timestamp=none`；
 - CI：unix-matrix 的 macOS runner 会在跑契约前对 `release/` 与 `companion-tools/` 下的
   `*.com/*.ape/assimilate` 做 ad-hoc 签名；
-- 对外分发若要免「右键打开」警告，需证书持有者做 Developer ID 签名并公证
-  （`scripts/sign-macos.sh --identity "Developer ID Application: …"` 后再
-  `xcrun notarytool submit --wait`，需 Apple 开发者凭据，CI 不做公证）；
+- 对外分发若要免「右键打开」警告，需证书持有者做 Developer ID 签名并公证：
+  `scripts/notarize-macos.sh --identity "Developer ID Application: …"`（内部完成
+  签名→聚合打包→`xcrun notarytool submit --wait`→`stapler staple`→校验），
+  凭据走环境变量 `APPLE_ID`/`APPLE_TEAM_ID`/`APPLE_APP_PASSWORD`，仅在你本机执行；
+  可先 `scripts/notarize-macos.sh --check` 做前置检查（身份/工具）。CI 不做公证；
 - 分层包 zip 保持未签名以维持逐位可复现，解压后先跑 `make sign-macos`（或对解压目录
   执行 `scripts/sign-macos.sh`）再运行。
 

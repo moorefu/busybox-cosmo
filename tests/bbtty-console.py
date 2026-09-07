@@ -113,7 +113,12 @@ def main():
         result = subprocess.run([binary, command], stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 timeout=15)
-        assert result.returncode == 1, (command, result)
+        # 语义: 非终端/非 Console 必须"明确失败"。Unix 后端 rc=1; Windows 上
+        # cosmocc APE 直跑的退出码呈现为 1<<8=256 (CI windows-2022 实测), 两者
+        # 都代表同一错误路径, 一并接受并锁住 (其余取值视为回归)。
+        assert result.returncode in (1, 256), (command, result)
+        assert b"Console/ConPTY" in result.stderr or b"terminal" in result.stderr, (
+            command, result)
     print("PASS 重定向句柄明确失败", flush=True)
     result = subprocess.run(
         [sys.executable, __file__, binary, "--worker"],
