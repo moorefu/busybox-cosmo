@@ -17,6 +17,57 @@ BB_FALLBACK_URL="${BB_FALLBACK_URL-https://sources.buildroot.net/busybox/${BB_TA
 # busybox.net 官方 tarball sha256 (取源脚本校验用)
 BB_SHA256="${BB_SHA256:-34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2}"
 
+# ---- 伴生工具版本常量 (供应线: 锁定源码自建, 见 docs/COMPANION-DELIVERY-PLAN.md) ----
+# xz: 走 5.4 LTS 线, 规避 2024-3094 后门版本 (5.6.0/5.6.1)。首个锁定值取自
+# 官方 tukaani.org(302→github.com/tukaani-project/xz releases v5.4.7) 下载的
+# 原始 tarball, 交叉构建用 --host 关闭运行期探测; 未来升级先换常量再重验。
+XZ_VER="5.4.7"
+XZ_TARBALL="xz-${XZ_VER}.tar.xz"
+XZ_URL="${XZ_URL:-https://tukaani.org/xz/${XZ_TARBALL}}"
+XZ_SHA256="${XZ_SHA256:-016182c70bb5c7c9eb3465030e3a7f6baa25e17b0e8c0afe92772e6021843ce2}"
+# 伴生工具源码缓存/构建树 (work/ 与 refs/ 均被 gitignore, 可重建)
+REF_DIR="$ROOT/refs"
+COMPANION_REF_DIR="$REF_DIR/companions"
+
+# zip: 采用 Debian 维护的 3.0-16 "原包+补丁" 快照 (含 unicode 溢出/
+# CVE-2018-13410/符号链接/命令注入等修复)。zip 3.0 内置 deflate, 不依赖 zlib;
+# bzip2 方法未启用 (发行版同样只依赖 libbz2-dev, 我们连它也不引入)。
+ZIP_VER="3.0"
+ZIP_DEB_REV="16"
+ZIP_TARBALL="zip_${ZIP_VER}.orig.tar.gz"
+ZIP_URL="${ZIP_URL:-https://deb.debian.org/debian/pool/main/z/zip/${ZIP_TARBALL}}"
+ZIP_SHA256="${ZIP_SHA256:-f0e8bb1f9b7eb0b01285495a2699df3a4b766784c1765a8f1aeedf63c0806369}"
+ZIP_DEB_TARBALL="zip_${ZIP_VER}-${ZIP_DEB_REV}.debian.tar.xz"
+ZIP_DEB_URL="${ZIP_DEB_URL:-https://deb.debian.org/debian/pool/main/z/zip/${ZIP_DEB_TARBALL}}"
+ZIP_DEB_SHA256="${ZIP_DEB_SHA256:-fa79a0226f00f487b290489f62e1cd7f4a338df529a1e413fea4d168b8eee8f7}"
+
+# cacert.pem: 固定 curl.se/ca 的 Mozilla 转换快照 (MPL-2.0)。锁定值经官方
+# .sha256 sidecar 校验; 升级时先换 CA_VER/CA_SHA256 再重跑 fetch-cacert.sh。
+CA_VER="2026-08-13"
+CA_PEM="cacert-${CA_VER}.pem"
+CA_URL="${CA_URL:-https://curl.se/ca/${CA_PEM}}"
+CA_SHA256="${CA_SHA256:-f66dff1bdf8f96060b8177976f8b7d9254bc89bc4db933d769f7384d28480bc9}"
+
+# zstd: 官方 facebook/zstd v1.5.7 (GitHub release 资产为唯一锁定通道, 与 zlib 同例)。
+# 许可 BSD-3-Clause 与 GPLv2 双许可, 选用 BSD-3-Clause 分发。
+ZSTD_VER="1.5.7"
+ZSTD_TARBALL="zstd-${ZSTD_VER}.tar.gz"
+ZSTD_URL="${ZSTD_URL:-https://github.com/facebook/zstd/releases/download/v${ZSTD_VER}/${ZSTD_TARBALL}}"
+ZSTD_SHA256="${ZSTD_SHA256:-eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3}"
+
+# curl: 官方 curl 8.13.0; TLS 后端 mbedtls (cosmo 无 openssl/zlib, 见
+# COMPANION-DELIVERY-PLAN.md "curl TLS 后端选型")。--without-zlib 构建。
+CURL_VER="8.13.0"
+CURL_TARBALL="curl-${CURL_VER}.tar.gz"
+CURL_URL="${CURL_URL:-https://github.com/curl/curl/releases/download/curl-8_13_0/${CURL_TARBALL}}"
+CURL_SHA256="${CURL_SHA256:-c261a4db579b289a7501565497658bbd52d3138fdbaccf1490fa918129ab45bc}"
+
+# mbedtls (curl 的 TLS 依赖): 官方 3.6.2 LTS 线
+MBEDTLS_VER="3.6.2"
+MBEDTLS_TARBALL="mbedtls-${MBEDTLS_VER}.tar.bz2"
+MBEDTLS_URL="${MBEDTLS_URL:-https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-${MBEDTLS_VER}/${MBEDTLS_TARBALL}}"
+MBEDTLS_SHA256="${MBEDTLS_SHA256:-8b54fb9bcf4d5a7078028e0520acddefb7900b3e66fec7f7175bb5b7d85ccdca}"
+
 # ---- 目录 ----
 CONFIG_DIR="$ROOT/config"
 PATCHES_DIR="$ROOT/patches"

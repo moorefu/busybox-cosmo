@@ -76,12 +76,17 @@ def main() -> int:
     ):
         require(key, "builtin")
 
-    for operation in ("archive.xz.encode", "archive.lzma.encode", "archive.zip.encode"):
+    for operation in (
+        "archive.xz.encode",
+        "archive.lzma.encode",
+        "archive.zip.encode",
+        "archive.zstd.roundtrip",
+    ):
         source = data.get(operation)
         tool = data.get(f"{operation}.tool")
-        if source == "external":
+        if source in ("bundled", "external"):
             if not isinstance(tool, str) or not portable_isabs(tool):
-                errors.append(f"{operation}.tool: external 必须对应绝对路径，实际 {tool!r}")
+                errors.append(f"{operation}.tool: {source} 必须对应绝对路径，实际 {tool!r}")
         elif source == "unavailable":
             if tool != "none":
                 errors.append(f"{operation}.tool: unavailable 必须对应 'none'，实际 {tool!r}")
@@ -89,7 +94,11 @@ def main() -> int:
             errors.append(f"{operation}: 未知来源 {source!r}")
 
     require("process.name_search", args.name_search)
-    require("network.https.peer_verified", "unsupported")
+    if data.get("network.https.peer_verified") not in ("configured", "unsupported"):
+        errors.append(
+            "network.https.peer_verified: 只允许 configured 或 unsupported，"
+            f"实际 {data.get('network.https.peer_verified')!r}"
+        )
 
     if errors:
         print("能力门禁失败:", file=sys.stderr)

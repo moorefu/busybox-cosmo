@@ -62,8 +62,41 @@ jobs:
         run: make fetch && make check
       - name: 构建双架构 BusyBox
         run: make build
+      - name: 构建 bbtty 终端助手
+        run: make bbtty
+      - name: 构建伴生工具 (xz/zip/zstd/curl 锁定源码供应线复现)
+        shell: bash
+        run: |
+          make xz
+          make zip
+          make zstd
+          make curl
+      - name: 上传伴生工具
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: busybox-tools
+          path: dist/tools
+          if-no-files-found: error
+          retention-days: 7
       - name: 生成发布目录
         run: scripts/package-release.sh
+      - name: 生成分层伴生包 (archive/net, 可复现)
+        shell: bash
+        run: |
+          make cacert
+          scripts/package-archive.sh
+          scripts/package-net.sh
+      - name: 上传分层伴生包
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: busybox-layers
+          path: |
+            dist/busybox-archive.zip
+            dist/busybox-archive.zip.sha256
+            dist/busybox-net.zip
+            dist/busybox-net.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
       - name: 校验 APE 的 64K 页布局
         shell: bash
         run: |
@@ -169,7 +202,15 @@ jobs:
           path: release
       - name: 恢复可执行权限
         shell: bash
-        run: chmod +x release/busybox release/busybox*.ape release/busybox.com release/assimilate release/ape-loader-*
+        run: chmod +x release/busybox release/busybox*.ape release/busybox.com release/assimilate release/ape-loader-* release/tools/bbtty.com
+      - name: 下载伴生工具 (xz/zip)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: busybox-tools
+          path: companion-tools
+      - name: 恢复伴生工具可执行权限
+        shell: bash
+        run: chmod +x companion-tools/*.com
       - name: 校验运行架构
         shell: bash
         run: test "$(uname -m)" = "${{ matrix.arch }}"
@@ -227,6 +268,8 @@ jobs:
           BUSYBOX_COSMO_CACHE: ${{ runner.temp }}/busybox-cosmo-contract-cache
         run: |
           set +e
+          ./tools/bbtty.com capabilities | grep -q '^bbtty.schema=1$'
+          bbtty_rc=$?
           ./busybox sh portable-contract.sh > "$RUNNER_TEMP/portable-contract.log" 2>&1
           rc=$?
           cat "$RUNNER_TEMP/portable-contract.log"
@@ -237,7 +280,30 @@ jobs:
             --arch '${{ matrix.capability_arch }}' \
             --name-search '${{ matrix.name_search }}'
           gate_rc=$?
-          test "$rc" -eq 0 -a "$capability_rc" -eq 0 -a "$gate_rc" -eq 0
+          test "$bbtty_rc" -eq 0 -a "$rc" -eq 0 -a "$capability_rc" -eq 0 -a "$gate_rc" -eq 0
+      - name: 运行 bbtty 真实 PTY 契约
+        shell: bash
+        working-directory: release
+        run: |
+          set -o pipefail
+          python3 bbtty-pty.py "$PWD/tools/bbtty.com" 2>&1 | tee "$RUNNER_TEMP/bbtty-pty.log"
+      - name: 运行伴生工具契约 (xz/zip/zstd)
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 "$GITHUB_WORKSPACE/tests/companion-tools.py" \
+            "$GITHUB_WORKSPACE/companion-tools/xz.com" \
+            "$GITHUB_WORKSPACE/companion-tools/zip.com" \
+            "$GITHUB_WORKSPACE/release/busybox-fat.ape" \
+            --zstd "$GITHUB_WORKSPACE/companion-tools/zstd.com" \
+            2>&1 | tee "$RUNNER_TEMP/companion-tools.log"
+      - name: 运行本地 HTTPS KAT (交付 curl.com, 本回环)
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 "$GITHUB_WORKSPACE/tests/https-kat.py" \
+            "$GITHUB_WORKSPACE/companion-tools/curl.com" \
+            2>&1 | tee "$RUNNER_TEMP/https-kat.log"
       - name: 上传 Unix 平台证据
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -246,6 +312,9 @@ jobs:
           path: |
             ${{ runner.temp }}/platform-info.txt
             ${{ runner.temp }}/platform-probe.log
+            ${{ runner.temp }}/bbtty-pty.log
+            ${{ runner.temp }}/companion-tools.log
+            ${{ runner.temp }}/https-kat.log
             ${{ runner.temp }}/deep-test.log
             ${{ runner.temp }}/ash-contract.log
             ${{ runner.temp }}/smoke-full.log
@@ -330,6 +399,9 @@ jobs:
         working-directory: release
         run: |
           $ErrorActionPreference = "Stop"
+          $bbttyCapabilities = & .\tools\bbtty.com capabilities
+          $bbttyRc = $LASTEXITCODE
+          if ($bbttyCapabilities -notcontains 'bbtty.schema=1') { throw 'bbtty schema 缺失' }
           $env:BBP_BUSYBOX = (Join-Path (Get-Location) "busybox.com")
           $env:BUSYBOX_COSMO_CACHE = (Join-Path $env:RUNNER_TEMP "busybox-cosmo-contract-cache")
           & .\busybox.com sh portable-contract.sh *> "$env:RUNNER_TEMP/portable-contract.log"
@@ -342,15 +414,25 @@ jobs:
             --arch '${{ matrix.capability_arch }}' `
             --name-search '${{ matrix.name_search }}'
           $gateRc = $LASTEXITCODE
+          if ($bbttyRc -ne 0) { exit $bbttyRc }
           if ($contractRc -ne 0) { exit $contractRc }
           if ($capabilityRc -ne 0) { exit $capabilityRc }
           if ($gateRc -ne 0) { exit $gateRc }
+      - name: 运行 bbtty 独立 Console 契约
+        shell: pwsh
+        working-directory: release
+        run: |
+          python .\bbtty-console.py .\tools\bbtty.com *> "$env:RUNNER_TEMP/bbtty-console.log"
+          $rc = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/bbtty-console.log"
+          exit $rc
       - name: 上传 Windows 平台证据
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ci-evidence-${{ runner.os }}-${{ matrix.arch }}
           path: |
+            ${{ runner.temp }}/bbtty-console.log
             ${{ runner.temp }}/platform-info.txt
             ${{ runner.temp }}/deep-test.log
             ${{ runner.temp }}/ash-contract.log

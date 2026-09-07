@@ -1,0 +1,8 @@
+CA bundle (cacert.pem) 许可说明
+================================
+来源: https://curl.se/ca/ (curl 项目对 Mozilla NSS 根证书的转换分发)
+快照: 2026-08-13 (Mozilla 更新时间见文件内转换时间戳)
+证书数: 121
+许可: Mozilla Public License 2.0 (MPL-2.0)
+引用: https://curl.se/docs/caextract.html 与 bundle 文件头部注释
+校验: SHA-256 f66dff1bdf8f96060b8177976f8b7d9254bc89bc4db933d769f7384d28480bc9 (与官方 .sha256 sidecar 一致)

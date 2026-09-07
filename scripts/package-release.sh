@@ -103,11 +103,17 @@ cp "$ROOT/scripts/bbcosmo" "$OUT/release/bbcosmo" && chmod 755 "$OUT/release/bbc
 cp "$ROOT/examples/portable-menu.sh" "$OUT/release/examples/portable-menu.sh" && chmod 755 "$OUT/release/examples/portable-menu.sh"
 cp "$ROOT/tests/portable-contract.sh" "$OUT/release/portable-contract.sh"
 cp "$ROOT/tests/ci-capability-gate.py" "$OUT/release/ci-capability-gate.py"
+cp "$ROOT/tests/bbtty-console.py" "$ROOT/tests/bbtty-pty.py" "$OUT/release/"
 cp "$ROOT/docs/DEPLOYMENT.md" "$ROOT/docs/KNOWN-LIMITATIONS.md" \
   "$ROOT/docs/TESTING.md" "$ROOT/docs/ROADMAP.md" "$ROOT/docs/COSMO-ABI-CONTRACTS.md" \
-  "$ROOT/docs/RUN-NO-SELF-MODIFY.md" "$OUT/release/"
+  "$ROOT/docs/RUN-NO-SELF-MODIFY.md" "$ROOT/docs/COMPANION-TOOLS.md" "$OUT/release/"
 cp "$ROOT/NOTICE.md" "$OUT/release/NOTICE.md"
 cp "$ROOT/licenses/BUSYBOX-GPL-2.0.txt" "$OUT/release/BUSYBOX-GPL-2.0.txt"
+if [ -x "$DIST_DIR/bbtty.com" ]; then
+  mkdir -p "$OUT/release/tools"
+  cp "$DIST_DIR/bbtty.com" "$OUT/release/tools/bbtty.com"
+  chmod 755 "$OUT/release/tools/bbtty.com"
+fi
 
 echo "=== 5. 生成 README.txt ==="
 if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
@@ -136,6 +142,7 @@ Windows x86_64（含 ARM64 仿真）: busybox.com ash script.sh
   ash-contract.sh                   ash 与核心功能契约
   deep-test.sh / smoke-full.sh      压力与综合功能测试
   BUSYBOX-GPL-2.0.txt / NOTICE.md   源码许可与归属
+  tools/                             可选伴生工具（存在时优先于宿主 PATH）
 
 先读 DEPLOYMENT.md 和 KNOWN-LIMITATIONS.md。macOS ARM64 与 Windows ARM64
 仿真仍是实验 CI；stty/raw TUI、可信 TLS、外部 xz 编码等不能由普通冒烟推断。

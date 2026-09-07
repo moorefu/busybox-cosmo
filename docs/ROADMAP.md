@@ -2,6 +2,11 @@
 
 本轮收敛的是补丁结构、文档入口和测试基础，不宣称跨平台能力全部完成。
 
+伴生工具与终端工作的执行顺序、运行时协议和验收条件见
+[COMPANION-TOOLS.md](COMPANION-TOOLS.md)。近期顺序固定为 `zip+xz`、`curl+CA`、
+`zstd`、按需 codec；`bbtty` 与前三项并行完善。分阶段执行与验收标准见
+[COMPANION-DELIVERY-PLAN.md](COMPANION-DELIVERY-PLAN.md)（M0–M5）。
+
 | 优先级 | 工作 | 完成标准 |
 |---|---|---|
 | P0 | termios 运行时索引与真实 PTY | mac/Windows/Linux 读写 intr/erase 双向对照、异常退出恢复终端；探针升级门禁 |

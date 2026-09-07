@@ -48,6 +48,28 @@ te '外部命令发现不被 BusyBox 同名 applet 遮蔽' '
 	test "$path" = "$PWD/external-bin/probe-tool"
 '
 te '外部命令发现拒绝路径注入' 'bbp_external_command "../xz" >/dev/null 2>&1; test "$?" -eq 2'
+te '包内伴生工具优先于 PATH' '
+	mkdir -p bundled-bin external-bin
+	printf "#!/bin/sh\nexit 0\n" > bundled-bin/probe-tool
+	printf "#!/bin/sh\nexit 0\n" > external-bin/probe-tool
+	chmod 755 bundled-bin/probe-tool external-bin/probe-tool
+	path=$(BBP_TOOLS_DIR="$PWD/bundled-bin" PATH="$PWD/external-bin" bbp_resolve_tool probe-tool "" "") || exit
+	test "$path" = "$PWD/bundled-bin/probe-tool"
+'
+te '显式无效伴生工具路径不回退' '
+	mkdir -p bundled-bin
+	printf "#!/bin/sh\nexit 0\n" > bundled-bin/xz
+	chmod 755 bundled-bin/xz
+	BBP_TOOLS_DIR="$PWD/bundled-bin" BBP_XZ_ENCODER="$PWD/missing-xz" bbp_external_xz >/dev/null 2>&1
+	test "$?" -ne 0
+'
+te '可信下载拒绝非 HTTPS URL' 'bbp_https_get http://example.invalid out >/dev/null 2>&1; test "$?" -eq 2'
+te 'CA bundle 必须为绝对非空文件' '
+	printf cert > ca.pem
+	BBP_CA_BUNDLE=ca.pem bbp_ca_bundle >/dev/null 2>&1; a=$?
+	BBP_CA_BUNDLE="$PWD/ca.pem" bbp_ca_bundle >/dev/null 2>&1; b=$?
+	test "$a" -ne 0 && test "$b" -eq 0
+'
 te '临时目录为绝对路径且含本进程所有权标志' '
 	tmp=$(bbp_tmpdir) || exit
 	case "$tmp" in /*) ;; *) exit 1 ;; esac
@@ -121,9 +143,14 @@ te '能力报告区分 applet 与操作来源' '
 	grep -q "^capabilities.schema=1$" capabilities.kv &&
 	grep -q "^platform.os.family=" capabilities.kv &&
 	grep -q "^archive.xz.decode=" capabilities.kv &&
-	grep -qE "^archive.xz.encode=(external|unavailable)$" capabilities.kv &&
+	grep -qE "^archive.xz.encode=(bundled|external|unavailable)$" capabilities.kv &&
+	grep -qE "^archive.zstd.roundtrip=(bundled|external|unavailable)$" capabilities.kv &&
+	grep -qE "^archive.zstd.encode=(bundled|external|unavailable)$" capabilities.kv &&
+	grep -qE "^archive.zstd.decode=(bundled|external|unavailable)$" capabilities.kv &&
+	grep -qE "^tty.backend=(bbtty|busybox-stty)$" capabilities.kv &&
 	grep -qE "^process.name_search=(builtin|unsupported)$" capabilities.kv &&
-	grep -q "^network.https.peer_verified=unsupported$" capabilities.kv
+	grep -qE "^network.https.peer_verified=(configured|unsupported)$" capabilities.kv &&
+	grep -qE "^network.http.fetch=(available|unavailable)$" capabilities.kv
 '
 
 echo "===== 兼容库契约: $PASS passed, $FAIL failed ====="

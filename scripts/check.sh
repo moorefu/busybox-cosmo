@@ -10,5 +10,5 @@ for file in tests/*.sh scripts/bbcosmo lib/*.sh examples/*.sh; do
 done
 python3 scripts/patch-series.py check patches/busybox/series
 python3 scripts/patch-series.py check patches/cosmo/series
-python3 -m py_compile tests/ci-platform-probe.py tests/ci-capability-gate.py
+python3 -m py_compile tests/ci-platform-probe.py tests/ci-capability-gate.py tests/bbtty-pty.py tests/bbtty-console.py tests/companion-tools.py tests/https-kat.py
 python3 -m unittest discover -s tests -p 'test_*.py' -v

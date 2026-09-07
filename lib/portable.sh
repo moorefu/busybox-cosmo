@@ -111,6 +111,42 @@ bbp_external_command() (
 	return 1
 )
 
+# 发行包内的伴生工具优先于宿主 PATH。BBP_TOOLS_DIR 必须是绝对目录，避免
+# 调用者切换工作目录后解析到另一份程序。显式设置某个 BBP_* 路径时采取
+# fail-closed：路径无效就失败，不再偷偷回退到包内工具或 PATH。
+bbp_bundled_command() (
+	[ "$#" -eq 1 ] || return "$BBP_E_USAGE"
+	case "$1" in ''|*/*|*[!A-Za-z0-9_.+-]*) return "$BBP_E_USAGE" ;; esac
+	case "${BBP_TOOLS_DIR:-}" in /*) ;; *) return 1 ;; esac
+	for bbp_bundled_candidate in \
+		"$BBP_TOOLS_DIR/$1" \
+		"$BBP_TOOLS_DIR/$1.exe" \
+		"$BBP_TOOLS_DIR/$1.com"; do
+		if [ -f "$bbp_bundled_candidate" ] && [ -x "$bbp_bundled_candidate" ]; then
+			bbp_bundled_parent=${bbp_bundled_candidate%/*}
+			bbp_bundled_leaf=${bbp_bundled_candidate##*/}
+			bbp_bundled_parent=$(CDPATH= cd -- "$bbp_bundled_parent" 2>/dev/null && pwd -P) || return 1
+			printf '%s/%s\n' "$bbp_bundled_parent" "$bbp_bundled_leaf"
+			return 0
+		fi
+	done
+	return 1
+)
+
+bbp_resolve_tool() (
+	[ "$#" -eq 3 ] || return "$BBP_E_USAGE"
+	bbp_resolve_name=$1
+	bbp_resolve_is_set=$2
+	bbp_resolve_explicit=$3
+	if [ "$bbp_resolve_is_set" = x ]; then
+		case "$bbp_resolve_explicit" in /*) ;; *) return 1 ;; esac
+		[ -f "$bbp_resolve_explicit" ] && [ -x "$bbp_resolve_explicit" ] || return 1
+		printf '%s\n' "$bbp_resolve_explicit"
+		return 0
+	fi
+	bbp_bundled_command "$bbp_resolve_name" || bbp_external_command "$bbp_resolve_name"
+)
+
 bbp_is_tty() {
 	# 选择从 stdin 读、提示写 stderr；stdout 可能正被命令替换捕获。
 	[ -t 0 ] && [ -t 2 ]
@@ -118,7 +154,30 @@ bbp_is_tty() {
 
 bbp_term_size() {
 	bbp_is_tty || return 1
+	bbp_tty_tool=$(bbp_resolve_tool bbtty "${BBP_BBTTY+x}" "${BBP_BBTTY:-}" 2>/dev/null || true)
+	if [ -n "$bbp_tty_tool" ]; then
+		"$bbp_tty_tool" size
+		return $?
+	fi
 	bbp stty size 2>/dev/null
+}
+
+bbp_tty_save() {
+	bbp_is_tty || return "$BBP_E_UNAVAILABLE"
+	bbp_tty_tool=$(bbp_resolve_tool bbtty "${BBP_BBTTY+x}" "${BBP_BBTTY:-}") || return "$BBP_E_UNAVAILABLE"
+	"$bbp_tty_tool" save
+}
+
+bbp_tty_enter_raw() {
+	bbp_is_tty || return "$BBP_E_UNAVAILABLE"
+	bbp_tty_tool=$(bbp_resolve_tool bbtty "${BBP_BBTTY+x}" "${BBP_BBTTY:-}") || return "$BBP_E_UNAVAILABLE"
+	"$bbp_tty_tool" raw
+}
+
+bbp_tty_restore() {
+	[ "$#" -eq 1 ] || return "$BBP_E_USAGE"
+	bbp_tty_tool=$(bbp_resolve_tool bbtty "${BBP_BBTTY+x}" "${BBP_BBTTY:-}") || return "$BBP_E_UNAVAILABLE"
+	"$bbp_tty_tool" restore "$1"
 }
 
 bbp_ansi_available() {
@@ -196,34 +255,76 @@ bbp_cleanup_dir() {
 }
 
 bbp_external_xz() (
-	if [ "${BBP_XZ_ENCODER+x}" = x ]; then
-		case "$BBP_XZ_ENCODER" in /*) ;; *) return 1 ;; esac
-		[ -x "$BBP_XZ_ENCODER" ] || return 1
-		printf '%s\n' "$BBP_XZ_ENCODER"
-		return 0
-	fi
-	bbp_external_command xz
+	bbp_resolve_tool xz "${BBP_XZ_ENCODER+x}" "${BBP_XZ_ENCODER:-}"
 )
 
 bbp_external_lzma() (
-	if [ "${BBP_LZMA_ENCODER+x}" = x ]; then
-		case "$BBP_LZMA_ENCODER" in /*) ;; *) return 1 ;; esac
-		[ -x "$BBP_LZMA_ENCODER" ] || return 1
-		printf '%s\n' "$BBP_LZMA_ENCODER"
-		return 0
-	fi
-	bbp_external_command lzma
+	bbp_resolve_tool lzma "${BBP_LZMA_ENCODER+x}" "${BBP_LZMA_ENCODER:-}"
 )
 
 bbp_external_zip() (
-	if [ "${BBP_ZIP_ENCODER+x}" = x ]; then
-		case "$BBP_ZIP_ENCODER" in /*) ;; *) return 1 ;; esac
-		[ -x "$BBP_ZIP_ENCODER" ] || return 1
-		printf '%s\n' "$BBP_ZIP_ENCODER"
+	bbp_resolve_tool zip "${BBP_ZIP_ENCODER+x}" "${BBP_ZIP_ENCODER:-}"
+)
+
+bbp_zstd() (
+	bbp_resolve_tool zstd "${BBP_ZSTD+x}" "${BBP_ZSTD:-}"
+)
+
+bbp_curl() (
+	bbp_resolve_tool curl "${BBP_CURL+x}" "${BBP_CURL:-}"
+)
+
+bbp_lz4() (
+	bbp_resolve_tool lz4 "${BBP_LZ4+x}" "${BBP_LZ4:-}"
+)
+
+bbp_brotli() (
+	bbp_resolve_tool brotli "${BBP_BROTLI+x}" "${BBP_BROTLI:-}"
+)
+
+bbp_ca_bundle() (
+	if [ "${BBP_CA_BUNDLE+x}" = x ]; then
+		case "$BBP_CA_BUNDLE" in /*) ;; *) return 1 ;; esac
+		[ -f "$BBP_CA_BUNDLE" ] && [ -s "$BBP_CA_BUNDLE" ] || return 1
+		printf '%s\n' "$BBP_CA_BUNDLE"
 		return 0
 	fi
-	bbp_external_command zip
+	case "${BBP_TOOLS_DIR:-}" in /*) ;; *) return 1 ;; esac
+	[ -f "$BBP_TOOLS_DIR/cacert.pem" ] && [ -s "$BBP_TOOLS_DIR/cacert.pem" ] || return 1
+	printf '%s/cacert.pem\n' "$BBP_TOOLS_DIR"
 )
+
+# 只提供强制证书验证的 HTTPS 下载入口，不接受 http://，也不暴露 -k。
+# --proto-redir '=https' 保证重定向也不降级到明文 HTTP。
+bbp_https_get() {
+	[ "$#" -eq 2 ] || return "$BBP_E_USAGE"
+	case "$1" in https://*) ;; *) return "$BBP_E_USAGE" ;; esac
+	bbp_https_curl=$(bbp_curl) || return "$BBP_E_UNAVAILABLE"
+	bbp_https_ca=$(bbp_ca_bundle) || return "$BBP_E_UNAVAILABLE"
+	"$bbp_https_curl" --fail --location --silent --show-error \
+		--proto '=https' --proto-redir '=https' --tlsv1.2 \
+		--cacert "$bbp_https_ca" --output "$2" "$1"
+}
+
+bbp_https_configured() {
+	bbp_https_curl=$(bbp_curl) || return 1
+	bbp_ca_bundle >/dev/null 2>&1 || return 1
+	"$bbp_https_curl" --version 2>/dev/null | bbp grep -qE 'Features:.*(SSL|HTTPS)'
+}
+
+bbp_zstd_available() {
+	(
+		bbp_zstd_tool=$(bbp_zstd) || exit 1
+		bbp_zstd_tmp=$(bbp_tmpdir) || exit 1
+		trap 'bbp_cleanup_dir "$bbp_zstd_tmp" >/dev/null 2>&1 || true' 0 1 2 3 15
+		printf '%s' zstd >"$bbp_zstd_tmp/in"
+		bbp timeout 10 "$bbp_zstd_tool" -q -c "$bbp_zstd_tmp/in" >"$bbp_zstd_tmp/in.zst" 2>/dev/null || exit 1
+		bbp timeout 10 "$bbp_zstd_tool" -q -d -c "$bbp_zstd_tmp/in.zst" >"$bbp_zstd_tmp/out" 2>/dev/null || exit 1
+		bbp cmp "$bbp_zstd_tmp/in" "$bbp_zstd_tmp/out" >/dev/null 2>&1 || exit 1
+		bbp_cleanup_dir "$bbp_zstd_tmp" || exit 1
+		trap - 0 1 2 3 15
+	)
+}
 
 bbp_xz_encode_available() {
 	(

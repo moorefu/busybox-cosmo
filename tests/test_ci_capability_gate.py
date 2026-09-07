@@ -41,7 +41,12 @@ def valid_report() -> dict[str, str]:
         "archive.zip.decode",
     ):
         report[operation] = "builtin"
-    for operation in ("archive.xz.encode", "archive.lzma.encode", "archive.zip.encode"):
+    for operation in (
+        "archive.xz.encode",
+        "archive.lzma.encode",
+        "archive.zip.encode",
+        "archive.zstd.roundtrip",
+    ):
         report[operation] = "unavailable"
         report[f"{operation}.tool"] = "none"
     return report

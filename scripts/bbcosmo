@@ -19,6 +19,7 @@ if [ -z "${BBP_BUSYBOX:-}" ]; then
 		fi
 	done
 fi
+BBP_TOOLS_DIR=${BBP_TOOLS_DIR:-$HERE/tools}
 . "$HERE/lib/portable.sh" || exit 2
 
 usage() {
@@ -29,9 +30,14 @@ usage() {
   bbcosmo run <busybox 参数...>
 环境:
   BBP_BUSYBOX=路径       指定发行包 launcher 或 busybox 二进制
+  BBP_TOOLS_DIR=目录     指定伴生工具目录（默认: 发行包 tools/）
+  BBP_BBTTY=路径         指定 bbtty 终端后端
   BBP_XZ_ENCODER=路径    指定可验证的外部 xz 编码器
   BBP_LZMA_ENCODER=路径  指定可验证的外部 lzma 编码器
   BBP_ZIP_ENCODER=路径   指定可验证的外部 zip 编码器
+  BBP_CURL=路径          指定 curl
+  BBP_CA_BUNDLE=路径     指定 CA bundle
+  BBP_ZSTD=路径          指定 zstd
 EOF
 }
 
@@ -90,19 +96,37 @@ bbcosmo_applet_source() {
 	fi
 }
 
-bbcosmo_external_operation() {
+bbcosmo_tool_operation() {
 	bbcosmo_external_name=$1
 	bbcosmo_external_probe=$2
 	bbcosmo_external_path_fn=$3
 	if "$bbcosmo_external_probe" >/dev/null 2>&1; then
-		bbcosmo_emit "$bbcosmo_external_name" external
 		bbcosmo_external_path=$($bbcosmo_external_path_fn 2>/dev/null || true)
 		[ -n "$bbcosmo_external_path" ] || bbcosmo_external_path=unknown
+		case "$bbcosmo_external_path" in
+			"$BBP_TOOLS_DIR"/*) bbcosmo_emit "$bbcosmo_external_name" bundled ;;
+			*) bbcosmo_emit "$bbcosmo_external_name" external ;;
+		esac
 	else
 		bbcosmo_emit "$bbcosmo_external_name" unavailable
 		bbcosmo_external_path=none
 	fi
 	bbcosmo_emit "$bbcosmo_external_name.tool" "$bbcosmo_external_path"
+	# 工具版本(尽力): --version 首行; zip 抓 "This is Zip" 行; 全失败留空
+	bbcosmo_tool_ver=""
+	if [ "$bbcosmo_external_path" != none ] && [ -x "$bbcosmo_external_path" ]; then
+		case "$bbcosmo_external_path" in
+			*zip*)
+				bbcosmo_tool_ver=$(bbp timeout 10 "$bbcosmo_external_path" --version 2>/dev/null |
+					bbp grep -m1 'This is Zip' || true) ;;
+			*)
+				bbcosmo_tool_ver=$(bbp timeout 10 "$bbcosmo_external_path" --version 2>/dev/null | bbp head -1 || true) ;;
+		esac
+		if [ -z "$bbcosmo_tool_ver" ]; then
+			bbcosmo_tool_ver=$(bbp timeout 10 "$bbcosmo_external_path" -v 2>/dev/null | bbp head -1 || true)
+		fi
+	fi
+	bbcosmo_emit "$bbcosmo_external_name.tool.version" "$bbcosmo_tool_ver"
 }
 
 capabilities() {
@@ -142,6 +166,11 @@ capabilities() {
 	bbcosmo_capability tty.input bbp_is_tty
 	bbcosmo_capability tty.size bbp_term_size
 	bbcosmo_capability tty.ansi bbp_ansi_available
+	if bbp_resolve_tool bbtty "${BBP_BBTTY+x}" "${BBP_BBTTY:-}" >/dev/null 2>&1; then
+		bbcosmo_emit tty.backend bbtty
+	else
+		bbcosmo_emit tty.backend busybox-stty
+	fi
 	bbcosmo_applet_source archive.gzip.encode gzip
 	bbcosmo_applet_source archive.gzip.decode gunzip
 	bbcosmo_applet_source archive.bzip2.encode bzip2
@@ -149,9 +178,13 @@ capabilities() {
 	bbcosmo_applet_source archive.xz.decode xz
 	bbcosmo_applet_source archive.lzma.decode unlzma
 	bbcosmo_applet_source archive.zip.decode unzip
-	bbcosmo_external_operation archive.xz.encode bbp_xz_encode_available bbp_external_xz
-	bbcosmo_external_operation archive.lzma.encode bbp_lzma_encode_available bbp_external_lzma
-	bbcosmo_external_operation archive.zip.encode bbp_zip_encode_available bbp_external_zip
+	bbcosmo_tool_operation archive.xz.encode bbp_xz_encode_available bbp_external_xz
+	bbcosmo_tool_operation archive.lzma.encode bbp_lzma_encode_available bbp_external_lzma
+	bbcosmo_tool_operation archive.zip.encode bbp_zip_encode_available bbp_external_zip
+	bbcosmo_tool_operation archive.zstd.roundtrip bbp_zstd_available bbp_zstd
+	# zstd 无 BusyBox applet: encode/decode 双向都由同一伴生工具承担, 分别上报
+	bbcosmo_tool_operation archive.zstd.encode bbp_zstd_available bbp_zstd
+	bbcosmo_tool_operation archive.zstd.decode bbp_zstd_available bbp_zstd
 	if bbp_username >/dev/null 2>&1; then
 		bbcosmo_emit identity.username available
 	else
@@ -175,7 +208,13 @@ capabilities() {
 	else
 		bbcosmo_emit process.name_search unsupported
 	fi
-	bbcosmo_emit network.https.peer_verified unsupported
+	if bbp_https_configured; then
+		bbcosmo_emit network.https.peer_verified configured
+		bbcosmo_emit network.http.fetch available
+	else
+		bbcosmo_emit network.https.peer_verified unsupported
+		bbcosmo_emit network.http.fetch unavailable
+	fi
 	bbcosmo_tmp=$(bbp_tmpdir 2>/dev/null || true)
 	if [ -n "$bbcosmo_tmp" ] && bbp_cleanup_dir "$bbcosmo_tmp"; then
 		bbcosmo_emit filesystem.temp available
@@ -218,6 +257,11 @@ doctor() {
 	else
 		printf '%s\n' 'zip 创建: 不可用或未配置外部编码器'
 	fi
+	if bbp_zstd_available; then
+		printf '%s\n' 'zstd 往返: 可用'
+	else
+		printf '%s\n' 'zstd 往返: 不可用或未配置'
+	fi
 	if bbp_username >/dev/null 2>&1 && bbp_cpu_count >/dev/null 2>&1; then
 		printf '%s\n' '用户/CPU 信息: 可用'
 	else
@@ -229,7 +273,11 @@ doctor() {
 	else
 		printf '%s\n' '按名称搜索进程: 不支持；请保存子进程 PID 并使用 kill -0'
 	fi
-	printf '%s\n' 'HTTPS 对端证书: 不可用（当前内置 TLS 不提供可信校验）'
+	if bbp_https_configured; then
+		printf '%s\n' 'HTTPS 对端证书: 已配置 curl + CA bundle（联网 KAT 由 CI 验证）'
+	else
+		printf '%s\n' 'HTTPS 对端证书: 不可用（需要 curl + CA bundle 伴生包）'
+	fi
 	printf '%s\n' '提示: 详细平台限制见 KNOWN-LIMITATIONS.md（源码树位于 docs/）'
 	return "$bbcosmo_fail"
 }

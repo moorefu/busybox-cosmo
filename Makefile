@@ -1,5 +1,5 @@
 # busybox-cosmo 工程便捷入口 (底层请直接调用 scripts/*.sh / toolchain/*.sh)
-.PHONY: help fetch build x86_64 aarch64 fat package smoke smokefull clean distclean \
+.PHONY: help fetch build x86_64 aarch64 fat bbtty bbtty-check xz zip zstd curl companion-check cacert https-kat qa-local package archive-package net-package smoke smokefull clean distclean \
         toolchain-copy toolchain-fetch toolchain-build toolchain-verify portable-check check test
 
 BUSYBOX ?= $(CURDIR)/dist/release/release/busybox
@@ -19,8 +19,20 @@ help:
 	@echo "make x86_64           — 构建 x86_64 APE (dist/busybox-x86_64.ape)"
 	@echo "make aarch64          — 构建 aarch64 APE (dist/busybox-aarch64.ape)"
 	@echo "make fat              — 合成双架构 fat (dist/busybox-fat.ape)"
+	@echo "make bbtty            — 构建跨平台终端助手 (dist/bbtty.com)"
+	@echo "make bbtty-check      — 真实 PTY 行为契约 (tests/bbtty-pty.py, 需 python3)"
+	@echo "make xz               — 从锁定源码构建伴生 xz (dist/tools/xz.com)"
+	@echo "make zip              — 从 Debian 补丁快照构建伴生 zip (dist/tools/zip.com)"
+	@echo "make zstd             — 从锁定源码构建伴生 zstd (dist/tools/zstd.com)"
+	@echo "make curl             — 从锁定源码构建伴生 curl+mbedtls (dist/tools/curl.com)"
+	@echo "make companion-check  — 伴生工具契约 (tests/companion-tools.py, 需产物在 dist/)"
+	@echo "make cacert           — 固定 CA bundle 取源 (dist/tools/cacert.pem)"
+	@echo "make https-kat        — 本地 TLS KAT (tests/https-kat.py, 需宿主 curl+openssl)"
+	@echo "make qa-local          — 本地交付 QA 门禁 (scripts/qa-local.sh, 需全部产物)"
 	@echo "make build            — x86_64 + aarch64 + fat 全量"
 	@echo "make package          — 生成发布包 (dist/busybox-cosmo-release.zip)"
+	@echo "make archive-package  — 分层 busybox-archive 包 (busybox+xz/zip/zstd)"
+	@echo "make net-package      — 分层 busybox-net 包 (busybox+curl.com+cacert)"
 	@echo "make smoke            — 本地副本快速离线冒烟"
 	@echo "make smokefull        — 完整冒烟(10 组 ~180 项, 自适应 SKIP, 本地回环网络)"
 	@echo "make portable-check   — 运行跨平台 Shell 基础库契约测试(需已构建发布包)"
@@ -51,8 +63,59 @@ fat:
 
 build: x86_64 aarch64 fat
 
+bbtty:
+	scripts/build-bbtty.sh
+
+bbtty-check: bbtty
+	python3 tests/bbtty-pty.py "$(CURDIR)/dist/bbtty.com"
+
+xz:
+	scripts/build-xz.sh
+
+zip:
+	scripts/build-zip.sh
+
+zstd:
+	scripts/build-zstd.sh
+
+curl:
+	scripts/build-curl.sh
+
+companion-check:
+	@test -x "$(CURDIR)/dist/tools/xz.com" && test -x "$(CURDIR)/dist/tools/zip.com" || \
+	  { echo "先构建伴生工具: make xz && make zip" >&2; exit 1; }
+	@args="$(CURDIR)/dist/tools/xz.com $(CURDIR)/dist/tools/zip.com"; \
+	if [ -x "$(CURDIR)/dist/busybox-fat.ape" ]; then \
+	  args="$$args $(CURDIR)/dist/busybox-fat.ape"; \
+	else \
+	  echo "提示: 缺 dist/busybox-fat.ape, 精简契约(不含 busybox 解码互操作)" >&2; \
+	fi; \
+	if [ -x "$(CURDIR)/dist/tools/zstd.com" ]; then \
+	  args="$$args --zstd $(CURDIR)/dist/tools/zstd.com"; \
+	fi; \
+	python3 tests/companion-tools.py $$args; \
+	if [ -x "$(CURDIR)/dist/tools/curl.com" ] && command -v openssl >/dev/null 2>&1; then \
+	  echo "--- curl.com HTTPS KAT ---"; \
+	  python3 tests/https-kat.py "$(CURDIR)/dist/tools/curl.com"; \
+	fi
+
 package: build
 	scripts/package-release.sh
+
+archive-package:
+	scripts/package-archive.sh
+
+net-package:
+	scripts/package-net.sh
+
+cacert:
+	scripts/fetch-cacert.sh
+
+https-kat:
+	python3 tests/https-kat.py "$${CURL:-$$(command -v curl || echo /usr/bin/curl)}"
+
+qa-local:
+	scripts/qa-local.sh
 
 smoke:
 	"$(BUSYBOX)" ash tests/smoke.sh
