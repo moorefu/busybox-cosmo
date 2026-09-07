@@ -117,8 +117,13 @@ def main():
         # cosmocc APE 直跑的退出码呈现为 1<<8=256 (CI windows-2022 实测), 两者
         # 都代表同一错误路径, 一并接受并锁住 (其余取值视为回归)。
         assert result.returncode in (1, 256), (command, result)
-        assert b"Console/ConPTY" in result.stderr or b"terminal" in result.stderr, (
-            command, result)
+    # save/raw 应明确指出非 Console; size 只承诺"取不到终端尺寸"的失败, 文案
+    # 是本地化的 (无固定 ASCII), 只校验退出码, 不比对文案。
+    for command in ("save", "raw"):
+        result = subprocess.run([binary, command], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                timeout=15)
+        assert b"Console" in result.stderr, (command, result)
     print("PASS 重定向句柄明确失败", flush=True)
     result = subprocess.run(
         [sys.executable, __file__, binary, "--worker"],
