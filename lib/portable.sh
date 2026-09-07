@@ -303,18 +303,24 @@ bbp_pid_alive() {
 # 依赖宿主暴露的进程名，不能代表通用的命令行名称搜索能力。
 bbp_process_search_available() {
 	(
+		[ "$(bbp_os_family)" = linux ] || exit 1
 		bbp_require sh sleep kill pgrep >/dev/null 2>&1 || exit 1
 		bbp_probe_marker=bbp-process-probe-$$
-		# 末尾的 ':' 防止 ash 直接 exec sleep，确保标记保留在 shell argv。
-		bbp sh -c 'sleep 10; :' "$bbp_probe_marker" >/dev/null 2>&1 &
+		# 直接执行外部入口，避免把 shell 函数放入后台后 $! 指向异步函数的
+		# 包装进程。末尾的 ':' 防止 ash 直接 exec sleep，确保标记留在 argv。
+		"$BBP_BUSYBOX" sh -c 'sleep 10; :' "$bbp_probe_marker" >/dev/null 2>&1 &
 		bbp_probe_pid=$!
 		trap 'bbp kill "$bbp_probe_pid" >/dev/null 2>&1 || true; wait "$bbp_probe_pid" 2>/dev/null || true' 0 1 2 3 15
-		bbp_probe_pgrep=$(bbp pgrep -f "$bbp_probe_marker" 2>/dev/null) || exit 1
-		bbp_probe_seen_pgrep=0
-		for bbp_probe_item in $bbp_probe_pgrep; do
-			[ "$bbp_probe_item" = "$bbp_probe_pid" ] && bbp_probe_seen_pgrep=1
+		bbp_probe_attempt=0
+		while [ "$bbp_probe_attempt" -lt 3 ]; do
+			bbp_probe_pgrep=$(bbp pgrep -f "$bbp_probe_marker" 2>/dev/null) || bbp_probe_pgrep=
+			for bbp_probe_item in $bbp_probe_pgrep; do
+				[ "$bbp_probe_item" = "$bbp_probe_pid" ] && exit 0
+			done
+			bbp_probe_attempt=$((bbp_probe_attempt + 1))
+			[ "$bbp_probe_attempt" -lt 3 ] && bbp sleep 1
 		done
-		[ "$bbp_probe_seen_pgrep" = 1 ]
+		exit 1
 	)
 }
 
