@@ -2,9 +2,9 @@
 # ============================================================
 # fetch-busybox.sh — 获取 busybox 官方原版源码
 #   1) 已存在 src/busybox-1.38.0/ 且校验通过 → 跳过
-#   2) 否则从 busybox.net 下载 tarball 并解压, 校验 sha256
+#   2) 否则下载锁定 tarball，校验 sha256 后解压
 # 用法: scripts/fetch-busybox.sh
-# 环境: BB_URL/BB_SHA256 可用 env 覆盖 (离线/镜像场景)
+# 环境: BB_URL/BB_FALLBACK_URL/BB_SHA256 可用 env 覆盖 (离线/镜像场景)
 # ============================================================
 set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/env.sh"
@@ -13,6 +13,12 @@ SRC="$SRC_DIR/busybox-$BB_VER"
 TARBALL="$SRC_DIR/$BB_TARBALL"
 
 mkdir -p "$SRC_DIR"
+
+tmp_tar=""
+cleanup() {
+  [ -z "$tmp_tar" ] || rm -f "$tmp_tar"
+}
+trap cleanup EXIT
 
 sha256_check() {
   file="$1"
@@ -45,13 +51,36 @@ if [ -f "$SRC/include/autoconf.h" ] || [ -d "$SRC/applets" ]; then
   exit 0
 fi
 
-if [ -f "$TARBALL" ]; then
-  echo "[fetch] 使用已有 tarball: $TARBALL"
-else
-  echo "[fetch] 下载 $BB_URL ..."
+if [ -f "$TARBALL" ] && sha256_check "$TARBALL"; then
+  echo "[fetch] 使用已有且校验通过的 tarball: $TARBALL"
+elif [ -f "$TARBALL" ]; then
+  echo "[fetch][警告] 删除校验失败的缓存 tarball: $TARBALL" >&2
+  rm -f "$TARBALL"
+fi
+
+if [ ! -f "$TARBALL" ]; then
   tmp_tar="$(mktemp "$SRC_DIR/.busybox-download.XXXXXX")"
-  curl -fL --retry 3 -o "$tmp_tar" "$BB_URL"
-  mv -f "$tmp_tar" "$TARBALL"
+  downloaded=0
+  previous_url=""
+  for url in "$BB_URL" "$BB_FALLBACK_URL"; do
+    [ -n "$url" ] || continue
+    [ "$url" != "$previous_url" ] || continue
+    previous_url="$url"
+    echo "[fetch] 下载 $url ..."
+    if curl -fL --connect-timeout 10 --max-time 90 -o "$tmp_tar" "$url" \
+        && sha256_check "$tmp_tar"; then
+      mv -f "$tmp_tar" "$TARBALL"
+      tmp_tar=""
+      downloaded=1
+      break
+    fi
+    echo "[fetch][警告] 此入口不可用或内容校验失败，尝试下一入口" >&2
+    : > "$tmp_tar"
+  done
+  [ "$downloaded" -eq 1 ] || {
+    echo "[fetch][错误] 所有源码入口均不可用" >&2
+    exit 1
+  }
 fi
 
 echo "[fetch] sha256 校验 ..."

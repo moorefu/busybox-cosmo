@@ -53,6 +53,11 @@ jobs:
           test -x toolchain/cosmo/bin/x86_64-unknown-cosmo-cc
           test -x toolchain/cosmo/bin/aarch64-unknown-cosmo-cc
           test -x toolchain/cosmo/bin/apelink
+      - name: 缓存已校验的 BusyBox 原始源码包
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: src/busybox-1.38.0.tar.bz2
+          key: busybox-source-1.38.0-34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2
       - name: 校验真实补丁结果与生成头文件
         run: make fetch && make check
       - name: 构建双架构 BusyBox

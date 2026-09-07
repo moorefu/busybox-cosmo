@@ -2,7 +2,7 @@
 
 ## 输入与产物
 
-构建输入由四部分组成：SHA256 锁定的 BusyBox 1.38.0、[BusyBox 补丁序列](../patches/busybox/series)、`config/busybox-1.38.0.config`、定制 Cosmopolitan 工具链。
+构建输入由四部分组成：SHA256 锁定的 BusyBox 1.38.0、[BusyBox 补丁序列](../patches/busybox/series)、`config/busybox-1.38.0.config`、定制 Cosmopolitan 工具链。取源优先访问 BusyBox 发布站，失败时访问保存同一 tarball 的 Buildroot 源码镜像；无论来自本地缓存还是网络，提取前都必须通过锁定的 SHA256 校验。
 
 工具链为 cosmocc 4.0.2 驱动 + Cosmopolitan `3293fad0a9eac7865c019be98fb993eeb933405e` 源码及[工具链补丁序列](../patches/cosmo/series)。头文件、libc、crt、APE loader 和 apelink 必须配套；不能只替换单个库。[工具链流程](../toolchain/README.md)
 

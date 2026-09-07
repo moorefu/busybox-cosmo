@@ -10,9 +10,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # ---- 版本常量 ----
 BB_VER="1.38.0"
 BB_TARBALL="busybox-${BB_VER}.tar.bz2"
-BB_URL="https://busybox.net/downloads/${BB_TARBALL}"
+BB_URL="${BB_URL:-https://busybox.net/downloads/${BB_TARBALL}}"
+# Buildroot 源码镜像保存的是同一份 BusyBox 发布 tarball；取源脚本仍以
+# BB_SHA256 为唯一信任依据。可设为空字符串禁用备用入口。
+BB_FALLBACK_URL="${BB_FALLBACK_URL-https://sources.buildroot.net/busybox/${BB_TARBALL}}"
 # busybox.net 官方 tarball sha256 (取源脚本校验用)
-BB_SHA256="34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2"
+BB_SHA256="${BB_SHA256:-34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2}"
 
 # ---- 目录 ----
 CONFIG_DIR="$ROOT/config"
