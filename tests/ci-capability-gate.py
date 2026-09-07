@@ -11,7 +11,16 @@ import sys
 from pathlib import Path
 
 
+def configure_utf8_output() -> None:
+    """让重定向日志在 Windows 非 UTF-8 代码页下仍可输出中文诊断。"""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def main() -> int:
+    configure_utf8_output()
     parser = argparse.ArgumentParser()
     parser.add_argument("report", type=Path)
     parser.add_argument("--os", required=True, dest="os_family")

@@ -70,7 +70,7 @@ class TestLibraryTests(unittest.TestCase):
             "bbtest_init selftest; exit 23"
         )
         self.assertEqual(result.returncode, 23)
-        self.assertIn("已重试 5 次", result.stderr)
+        self.assertIn("已重试 15 次", result.stderr)
         self.assertEqual(len(files), 1)
 
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -47,7 +48,9 @@ def valid_report() -> dict[str, str]:
 
 
 class CapabilityGateTests(unittest.TestCase):
-    def run_gate(self, report: object) -> subprocess.CompletedProcess[str]:
+    def run_gate(
+        self, report: object, *, text: bool = True, env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "capabilities.json"
             path.write_text(json.dumps(report), encoding="utf-8")
@@ -65,12 +68,19 @@ class CapabilityGateTests(unittest.TestCase):
                 ],
                 check=False,
                 capture_output=True,
-                text=True,
+                text=text,
+                env=env,
             )
 
     def test_valid_report_passes(self) -> None:
         result = self.run_gate(valid_report())
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_cp1252_runner_still_emits_utf8_diagnostics(self) -> None:
+        env = dict(os.environ, PYTHONIOENCODING="cp1252")
+        result = self.run_gate(valid_report(), text=False, env=env)
+        self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+        self.assertIn("能力门禁通过", result.stdout.decode("utf-8"))
 
     def test_invalid_reports_are_rejected(self) -> None:
         cases: list[tuple[str, object]] = []
