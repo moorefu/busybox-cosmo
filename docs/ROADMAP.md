@@ -5,11 +5,10 @@
 | 优先级 | 工作 | 完成标准 |
 |---|---|---|
 | P0 | termios 运行时索引与真实 PTY | mac/Windows/Linux 读写 intr/erase 双向对照、异常退出恢复终端；探针升级门禁 |
-| P0 | 脚本库安全边界 | 临时目录所有权与防误删、子 shell trap 隔离、JSON 控制字符转义、外部工具超时与明确失败均有负向测试 |
-| P1 | 行式交互协议 | stdin/stderr 的 TTY 判断、重定向捕获选择、EOF/取消/默认值/非法输入统一；无 TTY 不等待 |
 | P1 | 可信下载 | 证书校验通过/过期/错误主机名/不可信 CA 的本地 TLS 测试；后端不可用时明确失败 |
 | P1 | 网络服务 | httpd/ftpd/inetd 等本地回环测试，明确 Windows fork/socket 的可用边界和超时 |
-| P1 | 发布矩阵 | min 与完整包都在六个 runner 跑契约；匹配产物哈希，补回归基线和 SKIP/SOFT 白名单 |
+| P1 | 发布矩阵 | min 与完整包都在六个 runner 跑契约；匹配产物哈希，按具体能力维护 SKIP 基线 |
+| P1 | raw TUI | 在 termios 修复后增加屏幕尺寸、键盘、粘贴、取消及终端恢复契约；行式 UI 继续作为默认降级 |
 | P2 | ash 扩展契约 | 交互 job control、信号中断、hush 对照、重定位安装、loader 冷缓存并发启动 |
 | P2 | 工具链升级 | 消除私有 ABI 隐式依赖；逐补丁上游化，演练 BusyBox/Cosmopolitan 升级并重新生成结果清单 |
 | P2 | 可复现发布 | 固定 ZIP 时间与文件顺序，两份独立工作目录构建及打包哈希对照 |

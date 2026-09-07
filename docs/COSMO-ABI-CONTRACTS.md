@@ -22,4 +22,3 @@
 3. 运行 `scripts/check-ape-64k.sh` 的正确样本和坏样本，确认缺工具、解析异常、缺 loader 都返回非零。
 4. 在 Linux、macOS、Windows（含仿真路径）分别执行长 argv、嵌套 exec、tar 压缩和 ps/TTY 专项。
 5. 只有当结果与上一版本逐项对照后，才更新 `docs/KNOWN-LIMITATIONS.md` 和发布能力清单。
-

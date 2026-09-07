@@ -16,11 +16,13 @@ busybox.com ash bbcosmo doctor
 
 不要将任意宿主 `sh` 的测试结果当成包内 ash 的结果。Windows 二进制名字保留 `busybox`；Windows ARM64 当前使用 x86_64 仿真。终端可先采用 UTF-8 和行式交互；完整 TUI 仍需专门验证。
 
+脚本在执行可选操作前可运行 `./busybox ash bbcosmo capabilities --format kv`。压缩创建来源只会是 `builtin`、`external` 或 `unavailable`，进程名称搜索只会是 `builtin` 或 `unsupported`；不要从 applet 清单自行推断。
+
 ## 缓存与安装
 
 launcher 选择架构并准备缓存副本/loader。缓存优先级为 `BUSYBOX_COSMO_CACHE`、`XDG_CACHE_HOME/busybox-cosmo`、用户默认缓存目录。某些启动路径需要用户目录中的 `~/.ape-1.10`，并非完全无写入。
 
-完整包可运行 `./install.sh --prefix /绝对路径`；Linux 如需系统级 binfmt，可使用 `sudo ./busybox --setup-linux`。后者会修改系统配置，不是普通脚本运行的必要前置；注册的开机持久化需按安装器提示处理。
+完整包可运行 `./install.sh --prefix /绝对路径`；前缀会写入 launcher 与卸载清单，因此拒绝引号、反斜杠、变量展开符和换行，Windows Git Bash/MSYS 请使用 `/c/...` 路径。Linux 如需系统级 binfmt，可使用 `sudo ./busybox --setup-linux`。后者会修改系统配置，不是普通脚本运行的必要前置；注册的开机持久化需按安装器提示处理。
 
 发布 APE 内嵌 loader，正常启动与主动同化不同。转换原生格式应作用于副本，不要直接对分发母本运行 `--assimilate`。Linux 原生转换使用完整包的独立 assimilate 工具；不要使用 APE 内置的 mac 同化路径。
 

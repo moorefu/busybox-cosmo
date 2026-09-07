@@ -7,7 +7,7 @@
 | Cosmopolitan 适配 | `patches/cosmo/series` | Windows 命令行、mac loader 路径、64K 布局等 libc/loader 行为 |
 | 构建发布 | `scripts/`、`toolchain/` | 校验来源、原子应用补丁、编译、链接、打包 |
 | 启动部署 | `scripts/bb.sh`、`install.sh` | 选择平台载荷、loader、缓存副本或 binfmt |
-| 脚本体验 | `lib/portable.sh`、`scripts/bbcosmo` | 能力查询、临时目录、行式交互；实验 API |
+| 脚本体验 | `lib/portable.sh`、`scripts/bbcosmo` | 归一化平台、操作级能力、临时目录、PID 接口和稳定 ID 行式交互；实验 API |
 | 验证 | `tests/`、GitHub Actions | 行为断言与平台证据，不用 applet 存在性代替功能测试 |
 
 ## 为什么 BusyBox 需要特别适配
@@ -20,7 +20,7 @@ BusyBox 的 applet 会再调用自身；ash 优先内部 applet 并使用子进�
 
 - `include/usage.h` 等生成物由 BusyBox 的标准规则生成，不作为补丁维护。
 - make 的外来实现单独保留为导入补丁；平台选择改动不与 ash 运行时混在一起。
-- 宿主能力要行为探测：mac `ps` 依赖系统程序，xz 编码依赖外部工具，TLS 校验不能靠 HTTPS 请求成功来证明。
+- 宿主能力要行为探测：压缩“有命令”不等于能编码，进程 applet 存在不等于有 `/proc`，TLS 连通不等于证书可信。
 - 脚本层能统一接口、错误和降级，不能模拟完整 POSIX 权限、可靠 PTY 或 Windows socket 继承。
 
 私有符号与布局依赖见 [Cosmopolitan ABI 契约](COSMO-ABI-CONTRACTS.md)；未完成工作见[路线图](ROADMAP.md)。
