@@ -41,6 +41,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# PREFIX 会写入可执行 launcher 与逐行卸载清单。拒绝会破坏 Shell 字面量或
+# 清单边界的字符；Windows 的 Git Bash/MSYS 请使用 /c/... 形式路径。
+prefix_lf='
+'
+prefix_cr=$(printf '\r')
+case "$PREFIX" in
+  *'"'*|*'\'*|*'$'*|*'`'*|*"$prefix_lf"*|*"$prefix_cr"*)
+    echo "--prefix 含不安全字符（双引号、反斜杠、美元符、反引号或换行）" >&2
+    exit 2 ;;
+esac
+
 # ---------- 平台/架构探测 ----------
 OS="$(uname -s 2>/dev/null | tr A-Z a-z)"
 MACH="$(uname -m 2>/dev/null | tr A-Z a-z)"
@@ -58,6 +69,7 @@ esac
 
 echo "平台: $PLAT / $ARCH    安装根: $PREFIX"
 MANIFEST="$PREFIX/.busybox-cosmo-manifest"
+[ ! -L "$MANIFEST" ] || { echo "拒绝使用符号链接安装清单: $MANIFEST" >&2; exit 2; }
 
 # ---------- 待安装资产探测 (兼容: release 同目录 / 工程内 dist 布局) ----------
 find_asset() { # $1=名 输出路径; 找不到返回 1
@@ -95,6 +107,27 @@ esac
     echo "未找到本项目安装清单，拒绝递归删除: $MANIFEST" >&2
     exit 1
   }
+  for manifest_dir in "$PREFIX" "$PREFIX/bin" "$PREFIX/libexec" "$PREFIX/loaders" "$PREFIX/tools"; do
+    [ ! -L "$manifest_dir" ] || { echo "拒绝卸载符号链接目录: $manifest_dir" >&2; exit 2; }
+  done
+  manifest_target_allowed() {
+    case "$1" in
+      "$PREFIX/busybox.exe"|"$PREFIX/busybox-arm64-linux-elf"|\
+      "$PREFIX/libexec/busybox"|"$PREFIX/bin/busybox"|"$PREFIX/bin/busybox.com"|\
+      "$PREFIX/tools/assimilate") return 0 ;;
+      "$PREFIX/loaders/"*)
+        manifest_leaf=${1#"$PREFIX/loaders/"}
+        case "$manifest_leaf" in ""|*/*|*[!A-Za-z0-9._-]*) return 1 ;; esac
+        return 0 ;;
+    esac
+    return 1
+  }
+  while IFS= read -r target; do
+    [ -z "$target" ] || manifest_target_allowed "$target" || {
+      echo "安装清单含越界目标，拒绝卸载: $target" >&2
+      exit 2
+    }
+  done < "$MANIFEST"
   while IFS= read -r target; do
     [ -n "$target" ] && rm -f -- "$target"
   done < "$MANIFEST"

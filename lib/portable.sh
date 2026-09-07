@@ -10,6 +10,12 @@ BBP_BUSYBOX=${BBP_BUSYBOX:-busybox}
 BBP_UI_MODE=${BBP_UI_MODE:-auto}
 BBP_COLOR=${BBP_COLOR:-auto}
 
+# 兼容层公开退出码。底层 applet 的退出码保持原样；这些值只用于 bbp_* API。
+BBP_E_USAGE=2
+BBP_E_UNSUPPORTED=3
+BBP_E_UNAVAILABLE=127
+BBP_E_CANCELLED=130
+
 bbp() {
 	"$BBP_BUSYBOX" "$@"
 }
@@ -50,12 +56,60 @@ bbp_arch() {
 	bbp uname -m 2>/dev/null || printf '%s\n' unknown
 }
 
-bbp_is_windows() {
+bbp_os_family() {
 	case "$(bbp_os)" in
-		*[Ww]indows*|*[Ww]in32*|MINGW*|MSYS*|CYGWIN*) return 0 ;;
-		*) return 1 ;;
+		Linux*) printf '%s\n' linux ;;
+		Darwin*) printf '%s\n' macos ;;
+		*[Ww]indows*|*[Ww]in32*|MINGW*|MSYS*|CYGWIN*) printf '%s\n' windows ;;
+		FreeBSD*) printf '%s\n' freebsd ;;
+		OpenBSD*) printf '%s\n' openbsd ;;
+		NetBSD*) printf '%s\n' netbsd ;;
+		*) printf '%s\n' unknown ;;
 	esac
 }
+
+bbp_arch_family() {
+	case "$(bbp_arch)" in
+		x86_64|amd64|AMD64) printf '%s\n' x86_64 ;;
+		aarch64|arm64|ARM64) printf '%s\n' aarch64 ;;
+		*) printf '%s\n' unknown ;;
+	esac
+}
+
+bbp_is_windows() {
+	[ "$(bbp_os_family)" = windows ]
+}
+
+# 只查找 PATH 中的独立程序，不使用 command -v。BusyBox ash 启用
+# FEATURE_PREFER_APPLETS 后，command -v/xz 可能指向仅支持解码的内置 applet。
+bbp_external_command() (
+	[ "$#" -eq 1 ] || return "$BBP_E_USAGE"
+	case "$1" in
+		''|*/*|*[!A-Za-z0-9_.+-]*) return "$BBP_E_USAGE" ;;
+	esac
+	# PATH 分段仍需关闭 pathname expansion；目录名中的 []*? 只能按字面解释。
+	set -f
+	bbp_cmd_name=$1
+	bbp_cmd_old_ifs=$IFS
+	IFS=:
+	for bbp_cmd_dir in ${PATH:-}; do
+		[ -n "$bbp_cmd_dir" ] || continue
+		for bbp_cmd_candidate in \
+			"$bbp_cmd_dir/$bbp_cmd_name" \
+			"$bbp_cmd_dir/$bbp_cmd_name.exe" \
+			"$bbp_cmd_dir/$bbp_cmd_name.com"; do
+			if [ -f "$bbp_cmd_candidate" ] && [ -x "$bbp_cmd_candidate" ]; then
+				IFS=$bbp_cmd_old_ifs
+				bbp_cmd_parent=${bbp_cmd_candidate%/*}
+				bbp_cmd_leaf=${bbp_cmd_candidate##*/}
+				bbp_cmd_parent=$(CDPATH= cd -- "$bbp_cmd_parent" 2>/dev/null && pwd -P) || return 1
+				printf '%s/%s\n' "$bbp_cmd_parent" "$bbp_cmd_leaf"
+				return 0
+			fi
+		done
+	done
+	return 1
+)
 
 bbp_is_tty() {
 	# 选择从 stdin 读、提示写 stderr；stdout 可能正被命令替换捕获。
@@ -148,20 +202,27 @@ bbp_external_xz() (
 		printf '%s\n' "$BBP_XZ_ENCODER"
 		return 0
 	fi
-	bbp_xz_old_ifs=$IFS
-	IFS=:
-	bbp_xz_path=${PATH:-}
-	for bbp_xz_dir in $bbp_xz_path; do
-		[ -n "$bbp_xz_dir" ] || continue
-		for bbp_xz_candidate in "$bbp_xz_dir/xz" "$bbp_xz_dir/xz.exe"; do
-			if [ -f "$bbp_xz_candidate" ] && [ -x "$bbp_xz_candidate" ]; then
-				IFS=$bbp_xz_old_ifs
-				printf '%s\n' "$bbp_xz_candidate"
-				return 0
-			fi
-		done
-	done
-	return 1
+	bbp_external_command xz
+)
+
+bbp_external_lzma() (
+	if [ "${BBP_LZMA_ENCODER+x}" = x ]; then
+		case "$BBP_LZMA_ENCODER" in /*) ;; *) return 1 ;; esac
+		[ -x "$BBP_LZMA_ENCODER" ] || return 1
+		printf '%s\n' "$BBP_LZMA_ENCODER"
+		return 0
+	fi
+	bbp_external_command lzma
+)
+
+bbp_external_zip() (
+	if [ "${BBP_ZIP_ENCODER+x}" = x ]; then
+		case "$BBP_ZIP_ENCODER" in /*) ;; *) return 1 ;; esac
+		[ -x "$BBP_ZIP_ENCODER" ] || return 1
+		printf '%s\n' "$BBP_ZIP_ENCODER"
+		return 0
+	fi
+	bbp_external_command zip
 )
 
 bbp_xz_encode_available() {
@@ -176,6 +237,88 @@ bbp_xz_encode_available() {
 		bbp cmp "$bbp_xz_tmp/in" "$bbp_xz_tmp/out" >/dev/null 2>&1 || exit 1
 		bbp_cleanup_dir "$bbp_xz_tmp" || exit 1
 		trap - 0 1 2 3 15
+	)
+}
+
+bbp_lzma_encode_available() {
+	(
+		bbp_lzma_encoder=$(bbp_external_lzma) || exit 1
+		bbp_lzma_tmp=$(bbp_tmpdir) || exit 1
+		trap 'bbp_cleanup_dir "$bbp_lzma_tmp" >/dev/null 2>&1 || true' 0 1 2 3 15
+		printf '%s' x >"$bbp_lzma_tmp/in"
+		bbp timeout 10 "$bbp_lzma_encoder" -c "$bbp_lzma_tmp/in" >"$bbp_lzma_tmp/in.lzma" 2>/dev/null || exit 1
+		[ -s "$bbp_lzma_tmp/in.lzma" ] || exit 1
+		bbp unlzma -c "$bbp_lzma_tmp/in.lzma" >"$bbp_lzma_tmp/out" 2>/dev/null || exit 1
+		bbp cmp "$bbp_lzma_tmp/in" "$bbp_lzma_tmp/out" >/dev/null 2>&1 || exit 1
+		bbp_cleanup_dir "$bbp_lzma_tmp" || exit 1
+		trap - 0 1 2 3 15
+	)
+}
+
+bbp_zip_encode_available() {
+	(
+		bbp_require unzip cmp >/dev/null 2>&1 || exit 1
+		bbp_zip_encoder=$(bbp_external_zip) || exit 1
+		bbp_zip_tmp=$(bbp_tmpdir) || exit 1
+		trap 'bbp_cleanup_dir "$bbp_zip_tmp" >/dev/null 2>&1 || true' 0 1 2 3 15
+		printf '%s' x >"$bbp_zip_tmp/in"
+		(cd "$bbp_zip_tmp" && bbp timeout 10 "$bbp_zip_encoder" -q archive.zip in) >/dev/null 2>&1 || exit 1
+		[ -s "$bbp_zip_tmp/archive.zip" ] || exit 1
+		bbp unzip -p "$bbp_zip_tmp/archive.zip" in >"$bbp_zip_tmp/out" 2>/dev/null || exit 1
+		bbp cmp "$bbp_zip_tmp/in" "$bbp_zip_tmp/out" >/dev/null 2>&1 || exit 1
+		bbp_cleanup_dir "$bbp_zip_tmp" || exit 1
+		trap - 0 1 2 3 15
+	)
+}
+
+bbp_username() {
+	[ "$#" -eq 0 ] || return "$BBP_E_USAGE"
+	bbp_username_value=$(bbp whoami 2>/dev/null) || return 1
+	[ -n "$bbp_username_value" ] || return 1
+	printf '%s\n' "$bbp_username_value"
+}
+
+bbp_cpu_count() {
+	[ "$#" -eq 0 ] || return "$BBP_E_USAGE"
+	bbp_cpu_value=$(bbp nproc 2>/dev/null) || return 1
+	case "$bbp_cpu_value" in ''|*[!0-9]*) return 1 ;; esac
+	[ "$bbp_cpu_value" -gt 0 ] 2>/dev/null || return 1
+	printf '%s\n' "$bbp_cpu_value"
+}
+
+# 空 DNS 域是有效结果（很多工作站只有短主机名），用退出码区分查询失败。
+bbp_dns_domain() {
+	[ "$#" -eq 0 ] || return "$BBP_E_USAGE"
+	bbp dnsdomainname 2>/dev/null
+}
+
+bbp_pid_alive() {
+	[ "$#" -eq 1 ] || return "$BBP_E_USAGE"
+	case "$1" in ''|*[!0-9]*|0) return "$BBP_E_USAGE" ;; esac
+	bbp kill -0 "$1" 2>/dev/null
+}
+
+# 名称搜索是可选能力：Linux /proc 通常可用，macOS/Windows 不据 applet
+# 清单猜测。探针启动唯一标记的子进程，并要求 pgrep 与 pidof 都找到其 PID。
+bbp_process_search_available() {
+	(
+		bbp_require sh sleep kill pgrep pidof >/dev/null 2>&1 || exit 1
+		bbp_probe_marker=bbp-process-probe-$$
+		# 末尾的 ':' 防止 ash 直接 exec sleep，确保标记保留在 shell argv。
+		bbp sh -c 'sleep 10; :' "$bbp_probe_marker" >/dev/null 2>&1 &
+		bbp_probe_pid=$!
+		trap 'bbp kill "$bbp_probe_pid" >/dev/null 2>&1 || true; wait "$bbp_probe_pid" 2>/dev/null || true' 0 1 2 3 15
+		bbp_probe_pgrep=$(bbp pgrep -f "$bbp_probe_marker" 2>/dev/null) || exit 1
+		bbp_probe_pidof=$(bbp pidof sh 2>/dev/null) || exit 1
+		bbp_probe_seen_pgrep=0
+		for bbp_probe_item in $bbp_probe_pgrep; do
+			[ "$bbp_probe_item" = "$bbp_probe_pid" ] && bbp_probe_seen_pgrep=1
+		done
+		bbp_probe_seen_pidof=0
+		for bbp_probe_item in $bbp_probe_pidof; do
+			[ "$bbp_probe_item" = "$bbp_probe_pid" ] && bbp_probe_seen_pidof=1
+		done
+		[ "$bbp_probe_seen_pgrep" = 1 ] && [ "$bbp_probe_seen_pidof" = 1 ]
 	)
 }
 
@@ -203,7 +346,9 @@ bbp_ui_select() {
 			bbp_ui_select_i=$((bbp_ui_select_i + 1))
 		done
 		printf '%s [1-%s]: ' "$bbp_ui_select_prompt" "$bbp_ui_select_count" >&2
-		IFS= read -r bbp_ui_select_answer || return 130
+		IFS= read -r bbp_ui_select_answer || return "$BBP_E_CANCELLED"
+		bbp_ui_cr=$(printf '\r')
+		bbp_ui_select_answer=${bbp_ui_select_answer%"$bbp_ui_cr"}
 		case "$bbp_ui_select_answer" in
 			*[!0-9]*|'') ;;
 			*)
@@ -217,15 +362,66 @@ bbp_ui_select() {
 	done
 }
 
+# 参数为 PROMPT ID LABEL [ID LABEL ...]；显示文本可变化，stdout 只返回稳定 ID。
+bbp_ui_select_id() {
+	[ "$#" -ge 3 ] || return "$BBP_E_USAGE"
+	bbp_ui_id_prompt=$1
+	shift
+	[ $(( $# % 2 )) -eq 0 ] || return "$BBP_E_USAGE"
+	bbp_ui_id_mode=$(bbp_ui_mode) || return $?
+	[ "$bbp_ui_id_mode" != none ] || return "$BBP_E_USAGE"
+	bbp_ui_id_count=$(($# / 2))
+	while :; do
+		bbp_ui_id_i=1
+		for bbp_ui_id_value do
+			if [ $((bbp_ui_id_i % 2)) -eq 0 ]; then
+				printf '%s) %s\n' "$((bbp_ui_id_i / 2))" "$bbp_ui_id_value" >&2
+			fi
+			bbp_ui_id_i=$((bbp_ui_id_i + 1))
+		done
+		printf '%s [1-%s]: ' "$bbp_ui_id_prompt" "$bbp_ui_id_count" >&2
+		IFS= read -r bbp_ui_id_answer || return "$BBP_E_CANCELLED"
+		bbp_ui_cr=$(printf '\r')
+		bbp_ui_id_answer=${bbp_ui_id_answer%"$bbp_ui_cr"}
+		case "$bbp_ui_id_answer" in
+			''|*[!0-9]*) ;;
+			*)
+				if [ "$bbp_ui_id_answer" -ge 1 ] 2>/dev/null && [ "$bbp_ui_id_answer" -le "$bbp_ui_id_count" ] 2>/dev/null; then
+					bbp_ui_id_i=1
+					for bbp_ui_id_value do
+						if [ "$bbp_ui_id_i" -eq $((bbp_ui_id_answer * 2 - 1)) ]; then
+							[ -n "$bbp_ui_id_value" ] || return "$BBP_E_USAGE"
+							printf '%s\n' "$bbp_ui_id_value"
+							return 0
+						fi
+						bbp_ui_id_i=$((bbp_ui_id_i + 1))
+					done
+				fi
+				;;
+		esac
+		printf '%s\n' '请输入菜单编号。' >&2
+	done
+}
+
 bbp_ui_confirm() {
-	[ "$#" -eq 1 ] || return 2
+	[ "$#" -ge 1 ] && [ "$#" -le 2 ] || return "$BBP_E_USAGE"
 	bbp_ui_confirm_prompt=$1
+	bbp_ui_confirm_default=${2:-no}
+	case "$bbp_ui_confirm_default" in yes|no) ;; *) return "$BBP_E_USAGE" ;; esac
 	bbp_ui_confirm_mode=$(bbp_ui_mode) || return $?
-	[ "$bbp_ui_confirm_mode" != none ] || return 2
-	printf '%s [y/N]: ' "$bbp_ui_confirm_prompt" >&2
-	IFS= read -r bbp_ui_confirm_answer || return 130
+	[ "$bbp_ui_confirm_mode" != none ] || return "$BBP_E_USAGE"
+	if [ "$bbp_ui_confirm_default" = yes ]; then
+		printf '%s [Y/n]: ' "$bbp_ui_confirm_prompt" >&2
+	else
+		printf '%s [y/N]: ' "$bbp_ui_confirm_prompt" >&2
+	fi
+	IFS= read -r bbp_ui_confirm_answer || return "$BBP_E_CANCELLED"
+	bbp_ui_cr=$(printf '\r')
+	bbp_ui_confirm_answer=${bbp_ui_confirm_answer%"$bbp_ui_cr"}
 	case "$bbp_ui_confirm_answer" in
 		y|Y|yes|YES) return 0 ;;
+		n|N|no|NO) return 1 ;;
+		'') [ "$bbp_ui_confirm_default" = yes ] ; return $? ;;
 		*) return 1 ;;
 	esac
 }

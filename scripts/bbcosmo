@@ -30,6 +30,8 @@ usage() {
 环境:
   BBP_BUSYBOX=路径       指定发行包 launcher 或 busybox 二进制
   BBP_XZ_ENCODER=路径    指定可验证的外部 xz 编码器
+  BBP_LZMA_ENCODER=路径  指定可验证的外部 lzma 编码器
+  BBP_ZIP_ENCODER=路径   指定可验证的外部 zip 编码器
 EOF
 }
 
@@ -80,6 +82,29 @@ bbcosmo_capability() {
 	fi
 }
 
+bbcosmo_applet_source() {
+	if bbp_have "$2"; then
+		bbcosmo_emit "$1" builtin
+	else
+		bbcosmo_emit "$1" unavailable
+	fi
+}
+
+bbcosmo_external_operation() {
+	bbcosmo_external_name=$1
+	bbcosmo_external_probe=$2
+	bbcosmo_external_path_fn=$3
+	if "$bbcosmo_external_probe" >/dev/null 2>&1; then
+		bbcosmo_emit "$bbcosmo_external_name" external
+		bbcosmo_external_path=$($bbcosmo_external_path_fn 2>/dev/null || true)
+		[ -n "$bbcosmo_external_path" ] || bbcosmo_external_path=unknown
+	else
+		bbcosmo_emit "$bbcosmo_external_name" unavailable
+		bbcosmo_external_path=none
+	fi
+	bbcosmo_emit "$bbcosmo_external_name.tool" "$bbcosmo_external_path"
+}
+
 capabilities() {
 	bbcosmo_format=text
 	if [ "${1:-}" = --format ]; then
@@ -95,6 +120,7 @@ capabilities() {
 	esac
 	bbcosmo_entry_rc=0
 	[ "$bbcosmo_format" = text ] && printf '%s\n' '# busybox-cosmo capabilities'
+	bbcosmo_emit capabilities.schema 1
 	if bbp --list >/dev/null 2>&1; then
 		bbcosmo_emit busybox.entry available
 	else
@@ -103,8 +129,10 @@ capabilities() {
 	fi
 	bbcosmo_emit platform.os "$(bbp_os)"
 	bbcosmo_emit platform.arch "$(bbp_arch)"
+	bbcosmo_emit platform.os.family "$(bbp_os_family)"
+	bbcosmo_emit platform.arch.family "$(bbp_arch_family)"
 	bbcosmo_emit busybox.path "$BBP_BUSYBOX"
-	for bbcosmo_applet in sh ash printf test awk sed grep tar gzip gunzip bzip2 xz stty; do
+	for bbcosmo_applet in sh ash printf test awk sed grep tar gzip gunzip bzip2 bunzip2 xz lzma unlzma unzip stty whoami nproc dnsdomainname pgrep pidof; do
 		if bbp_have "$bbcosmo_applet"; then
 			bbcosmo_emit "applet.$bbcosmo_applet" available
 		else
@@ -114,11 +142,40 @@ capabilities() {
 	bbcosmo_capability tty.input bbp_is_tty
 	bbcosmo_capability tty.size bbp_term_size
 	bbcosmo_capability tty.ansi bbp_ansi_available
-	bbcosmo_capability archive.xz.encode bbp_xz_encode_available
-	bbcosmo_xz_encoder=$(bbp_external_xz 2>/dev/null || true)
-	[ -n "$bbcosmo_xz_encoder" ] || bbcosmo_xz_encoder=none
-	bbcosmo_emit archive.xz.encoder "$bbcosmo_xz_encoder"
-	bbcosmo_emit network.https.peer_verified unavailable
+	bbcosmo_applet_source archive.gzip.encode gzip
+	bbcosmo_applet_source archive.gzip.decode gunzip
+	bbcosmo_applet_source archive.bzip2.encode bzip2
+	bbcosmo_applet_source archive.bzip2.decode bunzip2
+	bbcosmo_applet_source archive.xz.decode xz
+	bbcosmo_applet_source archive.lzma.decode unlzma
+	bbcosmo_applet_source archive.zip.decode unzip
+	bbcosmo_external_operation archive.xz.encode bbp_xz_encode_available bbp_external_xz
+	bbcosmo_external_operation archive.lzma.encode bbp_lzma_encode_available bbp_external_lzma
+	bbcosmo_external_operation archive.zip.encode bbp_zip_encode_available bbp_external_zip
+	if bbp_username >/dev/null 2>&1; then
+		bbcosmo_emit identity.username available
+	else
+		bbcosmo_emit identity.username unavailable
+	fi
+	if bbp_cpu_value=$(bbp_cpu_count 2>/dev/null); then
+		bbcosmo_emit system.cpu_count available
+		bbcosmo_emit system.cpu_count.value "$bbp_cpu_value"
+	else
+		bbcosmo_emit system.cpu_count unavailable
+		bbcosmo_emit system.cpu_count.value unknown
+	fi
+	if bbp_dns_domain >/dev/null 2>&1; then
+		bbcosmo_emit system.dns_domain available
+	else
+		bbcosmo_emit system.dns_domain unavailable
+	fi
+	bbcosmo_capability process.pid_probe bbp_pid_alive "$$"
+	if bbp_process_search_available; then
+		bbcosmo_emit process.name_search builtin
+	else
+		bbcosmo_emit process.name_search unsupported
+	fi
+	bbcosmo_emit network.https.peer_verified unsupported
 	bbcosmo_tmp=$(bbp_tmpdir 2>/dev/null || true)
 	if [ -n "$bbcosmo_tmp" ] && bbp_cleanup_dir "$bbcosmo_tmp"; then
 		bbcosmo_emit filesystem.temp available
@@ -150,6 +207,27 @@ doctor() {
 		printf '%s\n' 'xz 创建: 可用（已完成编码/解码往返）'
 	else
 		printf '%s\n' 'xz 创建: 不可用或未配置外部编码器'
+	fi
+	if bbp_lzma_encode_available; then
+		printf '%s\n' 'lzma 创建: 可用（外部编码器已完成往返）'
+	else
+		printf '%s\n' 'lzma 创建: 不可用或未配置外部编码器'
+	fi
+	if bbp_zip_encode_available; then
+		printf '%s\n' 'zip 创建: 可用（外部编码器已完成往返）'
+	else
+		printf '%s\n' 'zip 创建: 不可用或未配置外部编码器'
+	fi
+	if bbp_username >/dev/null 2>&1 && bbp_cpu_count >/dev/null 2>&1; then
+		printf '%s\n' '用户/CPU 信息: 可用'
+	else
+		printf '%s\n' '用户/CPU 信息: 不可用'
+		bbcosmo_fail=1
+	fi
+	if bbp_process_search_available; then
+		printf '%s\n' '按名称搜索进程: 可用'
+	else
+		printf '%s\n' '按名称搜索进程: 不支持；请保存子进程 PID 并使用 kill -0'
 	fi
 	printf '%s\n' 'HTTPS 对端证书: 不可用（当前内置 TLS 不提供可信校验）'
 	printf '%s\n' '提示: 详细平台限制见 KNOWN-LIMITATIONS.md（源码树位于 docs/）'

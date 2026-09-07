@@ -22,10 +22,8 @@ else
 			exit 2
 			;;
 		*)
-			choice=$(bbp_ui_select '请选择操作' 'status' 'doctor' 'quit') || exit $?
-			case "$choice" in
-				1) choice=status ;; 2) choice=doctor ;; 3) choice=quit ;;
-			esac
+			choice=$(bbp_ui_select_id '请选择操作' \
+				status '查看状态' doctor '运行诊断' quit '退出') || exit $?
 			;;
 	esac
 fi

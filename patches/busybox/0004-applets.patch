@@ -39,6 +39,86 @@ diff --git a/coreutils/hostid.c b/coreutils/hostid.c
  
  /* BB_AUDIT SUSv3 N/A -- Matches GNU behavior. */
  
+diff --git a/coreutils/nproc.c b/coreutils/nproc.c
+--- a/coreutils/nproc.c
++++ b/coreutils/nproc.c
+@@ -24,6 +24,9 @@
+ //usage:	)
+ 
+ #include "libbb.h"
++#if defined(__COSMOPOLITAN__)
++# include <libc/cosmo.h>
++#endif
+ 
+ int nproc_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
+ int nproc_main(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
+@@ -36,7 +39,16 @@
+ 			"all\0"    No_argument       "\xff"
+ 			, &ignore
+ 	);
++#endif
+ 
++#if defined(__COSMOPOLITAN__)
++	/* Cosmopolitan 已统一 Linux affinity、BSD sysctl 与 Windows processor
++	 * group；直接使用其公开接口，避免在无 /sys 或 affinity 模拟不完整时退出。 */
++	count = cosmo_cpu_count();
++	if (count < 1)
++		bb_simple_perror_msg_and_die("can't get cpu count");
++#else
++# if ENABLE_LONG_OPTS
+ 	if (opts & (1 << 1)) {
+ 		DIR *cpusd = opendir("/sys/devices/system/cpu");
+ 		if (cpusd) {
+@@ -49,7 +61,7 @@
+ 			IF_FEATURE_CLEAN_UP(closedir(cpusd);)
+ 		}
+ 	} else
+-#endif
++# endif
+ 	{
+ 		int i;
+ 		unsigned sz = 2 * 1024;
+@@ -61,6 +73,7 @@
+ 		}
+ 		IF_FEATURE_CLEAN_UP(free(mask);)
+ 	}
++#endif
+ 
+ 	IF_LONG_OPTS(count -= ignore;)
+ 	if (count <= 0)
+diff --git a/coreutils/whoami.c b/coreutils/whoami.c
+--- a/coreutils/whoami.c
++++ b/coreutils/whoami.c
+@@ -29,11 +29,29 @@
+ int whoami_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
+ int whoami_main(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
+ {
++	const char *name;
++
+ 	if (argv[1])
+ 		bb_show_usage();
+ 
+ 	/* Will complain and die if username not found */
++#if defined(__COSMOPOLITAN__)
++	/* BusyBox 的内置 passwd 解析器只读 /etc/passwd；macOS 目录服务和
++	 * Windows 账户并不保证出现在该文件。先保持 Unix uid 查询语义，再
++	 * 使用 Cosmopolitan 在 BSD/Windows 上连接系统账户 API 的 getlogin。 */
++	name = uid2uname(geteuid());
++	if (!name || !name[0])
++		name = getlogin();
++	if ((!name || !name[0]) && getenv("USER"))
++		name = getenv("USER");
++	if ((!name || !name[0]) && getenv("USERNAME"))
++		name = getenv("USERNAME");
++	if (!name || !name[0])
++		bb_error_msg_and_die("unknown uid %u", (unsigned)geteuid());
++	puts(name);
++#else
+ 	puts(xuid2uname(geteuid()));
++#endif
+ 
+ 	return fflush_all();
+ }
 diff --git a/coreutils/mkfifo.c b/coreutils/mkfifo.c
 --- a/coreutils/mkfifo.c
 +++ b/coreutils/mkfifo.c
@@ -129,6 +209,41 @@ diff --git a/networking/ifupdown.c b/networking/ifupdown.c
  
  //usage:#define ifup_trivial_usage
  //usage:       "[-n"IF_FEATURE_IFUPDOWN_MAPPING("m")"vf] [-i FILE] -a | IFACE..."
+diff --git a/networking/hostname.c b/networking/hostname.c
+--- a/networking/hostname.c
++++ b/networking/hostname.c
+@@ -157,7 +157,21 @@
+ 		struct hostent *hp;
+ 		char *p;
+ 
++#if defined(__COSMOPOLITAN__)
++		hp = gethostbyname(buf);
++		if (!hp) {
++			/* 没有 DNS 后缀是正常工作站配置。dnsdomainname 应输出空行
++			 * 并成功，而不是因为短主机名无法反查而终止整个 applet。 */
++			if (opts & OPT_d) {
++				p = strchr(buf, '.');
++				puts(p ? p + 1 : "");
++				goto hostname_done;
++			}
++			bb_simple_herror_msg_and_die(buf);
++		}
++#else
+ 		hp = xgethostbyname(buf);
++#endif
+ 		p = strchrnul(hp->h_name, '.');
+ 		if (opts & OPT_f) {
+ 			puts(hp->h_name);
+@@ -191,6 +205,9 @@
+ 		puts(buf);
+ 	}
+ 
++#if defined(__COSMOPOLITAN__)
++ hostname_done:
++#endif
+ 	if (ENABLE_FEATURE_CLEAN_UP)
+ 		free(buf);
+ 	return EXIT_SUCCESS;
 diff --git a/networking/nameif.c b/networking/nameif.c
 --- a/networking/nameif.c
 +++ b/networking/nameif.c
