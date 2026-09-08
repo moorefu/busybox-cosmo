@@ -126,11 +126,29 @@ jobs:
           BUSYBOX_COSMO_CACHE=/tmp/minchk-cache ./busybox sh -c 'echo x | grep -qE x && echo MIN-NESTED-OK'
           echo "min nested exec OK"
           BUSYBOX_COSMO_CACHE=/tmp/minchk-cache ./busybox ash "$GITHUB_WORKSPACE/tests/ash-contract.sh"
+      - name: 生成发布 zip 校验和
+        shell: bash
+        run: |
+          set -euo pipefail
+          ( cd dist && sha256sum busybox-cosmo-release.zip > busybox-cosmo-release.zip.sha256 )
+          ( cd dist && sha256sum busybox-min.zip > busybox-min.zip.sha256 )
+          cat dist/busybox-cosmo-release.zip.sha256 dist/busybox-min.zip.sha256
       - name: 上传 min 包
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: busybox-min
-          path: dist/busybox-min.zip
+          path: |
+            dist/busybox-min.zip
+            dist/busybox-min.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - name: 上传完整发布 zip
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: busybox-release-zip
+          path: |
+            dist/busybox-cosmo-release.zip
+            dist/busybox-cosmo-release.zip.sha256
           if-no-files-found: error
           retention-days: 7
       - name: 保存构建证据
