@@ -7,11 +7,24 @@
 #  - 覆盖分 10 组, 每项验证输出/语义(不只退出码)
 #  - 自洽: 网络组全部走本地回环 (nc/telnet), 不依赖外网
 #  - 自适应: 按 `busybox --list` 自动 SKIP 未编译的 applet
-#  - 平台软失败标 [soft]: 环境相关(如 mac 沙箱禁止 exec /bin/ps)
-#  - 汇总: 每组分项 + 总数/通过/跳过/失败, 任意硬失败 => rc 1
+#  - 平台差异必须是已知 SKIP 或能力探测，不设模糊的 SOFT 类别
+#  - 汇总: 每组分项 + 总数/通过/跳过/失败, 任意失败 => rc 1
 # ============================================================
-PASS=0; FAIL=0; SKIP=0; SOFT=0
+PASS=0; FAIL=0; SKIP=0
 LIST=""
+TM_SEQ=0
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/testlib.sh"
+if [ -f "$SCRIPT_DIR/../lib/portable.sh" ]; then
+	PORTABLE_LIB="$SCRIPT_DIR/../lib/portable.sh"
+else
+	PORTABLE_LIB="$SCRIPT_DIR/lib/portable.sh"
+fi
+[ -f "$PORTABLE_LIB" ] || { echo "FAIL: 缺少 portable.sh: $PORTABLE_LIB" >&2; exit 2; }
+BBP_BUSYBOX=${BBP_BUSYBOX:-busybox}
+. "$PORTABLE_LIB"
+bbtest_init smoke
 
 # 平台判定: cosmo Windows 的 uname -s = "Windows"
 # (信号模拟、fork 后 accept 的 socket 继承 = cosmo #1174 部分未根治,
@@ -21,18 +34,31 @@ case "$(uname -s 2>/dev/null)" in
 	*[Ww]indows*|*[Ww]in32*) IS_WIN=1 ;;
 esac
 
-bb_list() { [ -n "$LIST" ] || LIST="$(busybox --list 2>/dev/null)"; echo "$LIST"; }
+LIST="$(busybox --list 2>/dev/null)" || {
+	echo "FAIL: 无法读取 BusyBox applet 清单" >&2
+	exit 2
+}
+bb_list() { printf '%s\n' "$LIST"; }
 
 # 工具存在性
-have() { bb_list | grep -qx "$1"; }
+have() {
+	case "
+$LIST
+" in
+		*"
+$1
+"*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
 
 # 组计数
-g_PASS=0; g_FAIL=0; g_SKIP=0; g_SOFT=0
+g_PASS=0; g_FAIL=0; g_SKIP=0
 
 # 硬测试: 失败即 FAIL
 t() {
 	desc="$1"; shift
-	if "$@" >/dev/null 2>&1; then
+	if bbtest_run "$@"; then
 		echo "PASS: $desc"; PASS=$((PASS+1)); g_PASS=$((g_PASS+1))
 	else
 		echo "FAIL: $desc"; FAIL=$((FAIL+1)); g_FAIL=$((g_FAIL+1))
@@ -41,28 +67,32 @@ t() {
 # 需要某 applet, 缺失则 SKIP
 tn() { # tn <applet> <desc> <cmd...>
 	a="$1"; desc="$2"; shift 2
+	case "$a" in
+		'['|'[[') ;;
+		*[!A-Za-z0-9_.+-]*)
+			echo "FAIL: 测试定义中的非法 applet 名: $a" >&2
+			FAIL=$((FAIL+1)); g_FAIL=$((g_FAIL+1)); return 0
+			;;
+	esac
 	if ! have "$a"; then
 		echo "SKIP: $desc (无 $a)"; SKIP=$((SKIP+1)); g_SKIP=$((g_SKIP+1)); return 0
 	fi
 	t "$desc" "$@"
 }
-# 软测试(平台/环境差异), 失败记 SOFT 不使套件失败
-ts() {
-	desc="$1"; shift
-	if "$@" >/dev/null 2>&1; then
-		echo "PASS: $desc"; PASS=$((PASS+1)); g_PASS=$((g_PASS+1))
-	else
-		echo "SOFT: $desc"; SOFT=$((SOFT+1)); g_SOFT=$((g_SOFT+1))
-	fi
-}
 # 输出式断言: 期望 stdout 匹配 grep 模式
 tm() { # tm <desc> <pattern> <cmd...>
 	desc="$1"; pat="$2"; shift 2
-	if "$@" 2>/dev/null | grep -qE "$pat"; then
+	TM_SEQ=$((TM_SEQ+1))
+	out="tm-output-$$-$TM_SEQ"
+	producer_rc=0
+	( "$@" ) >"$out" 2>"$out.err" || producer_rc=$?
+	if [ "$producer_rc" -eq 0 ] && grep -qE "$pat" "$out"; then
 		echo "PASS: $desc"; PASS=$((PASS+1)); g_PASS=$((g_PASS+1))
 	else
-		echo "FAIL: $desc"; FAIL=$((FAIL+1)); g_FAIL=$((g_FAIL+1))
+		echo "FAIL: $desc (命令退出码=$producer_rc，期望模式=$pat)"; FAIL=$((FAIL+1)); g_FAIL=$((g_FAIL+1))
+		cat "$out" "$out.err" >&2
 	fi
+	rm -f "$out" "$out.err"
 }
 # Windows 平台缺口(cosmo 模拟限制) → 记 SKIP 不执行, 避免挂死/误判
 ws() { # ws <desc> <原因>
@@ -73,10 +103,10 @@ ws() { # ws <desc> <原因>
 group() {
 	[ "$1" != "" ] && echo ""
 	echo "===== 组 $GNO: $1 ====="
-	g_PASS=0; g_FAIL=0; g_SKIP=0; g_SOFT=0
+	g_PASS=0; g_FAIL=0; g_SKIP=0
 }
 gsum() {
-	echo "  -- 组小计: PASS=$g_PASS FAIL=$g_FAIL SKIP=$g_SKIP SOFT=$g_SOFT"
+	echo "  -- 组小计: PASS=$g_PASS FAIL=$g_FAIL SKIP=$g_SKIP"
 }
 
 GNO="A"
@@ -89,30 +119,41 @@ for a in ash sh cat ls cp mv rm mkdir ln echo printf test grep sed awk \
          sort uniq wc head tail cut tr od gzip gunzip bzip2 xz tar find \
          xargs sleep timeout kill env date dd df stat du vi make nc telnet; do
 	if have "$a"; then
-		echo "PASS: applet=$a"; PASS=$((PASS+1))
+		echo "PASS: applet=$a"; PASS=$((PASS+1)); g_PASS=$((g_PASS+1))
 	else
-		echo "SKIP: applet=$a 未编译"; SKIP=$((SKIP+1))
+		echo "SKIP: applet=$a 未编译"; SKIP=$((SKIP+1)); g_SKIP=$((g_SKIP+1))
 	fi
 done
 gsum
 
 GNO="B"
 group "文件系统与基本工具"
-t "mkdir/cp/cmp/rm" sh -c 'd=sf.d; rm -rf $d; mkdir -p $d/sub; echo x>$d/a; cp $d/a $d/sub/b; cmp $d/a $d/sub/b && rm -rf $d'
-t "mv 跨目录" sh -c 'd=sf.d; rm -rf $d; mkdir $d; echo m>$d/f; mv $d/f $d/g && test -f $d/g && rm -rf $d'
-t "ln 硬链接" sh -c 'd=sf.d; rm -rf $d; mkdir $d; echo l>$d/h; ln $d/h $d/i && test $d/h -ef $d/i && rm -rf $d'
-t "ln -s 符号链接" sh -c 'd=sf.d; rm -rf $d; mkdir $d; echo s>$d/r; ln -sfn r $d/s && test -e $d/s && rm -rf $d'
+t "mkdir/cp/cmp/rm" sh -c 'd=sf.d; rm -rf "$d" && mkdir -p "$d/sub" && echo x>"$d/a" && cp "$d/a" "$d/sub/b" && cmp "$d/a" "$d/sub/b" && rm -rf "$d"'
+t "mv 跨目录" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo m>"$d/f" && mv "$d/f" "$d/g" && test -f "$d/g" && rm -rf "$d"'
+t "ln 硬链接" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo l>"$d/h" && ln "$d/h" "$d/i" && test "$d/h" -ef "$d/i" && rm -rf "$d"'
+t "ln -s 符号链接" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo s>"$d/r" && ln -sfn r "$d/s" && test -e "$d/s" && rm -rf "$d"'
 t "dd bs/count/seek" sh -c 'printf xxxxxxxx | dd bs=2 count=4 2>/dev/null | wc -c | grep -q 8'
-t "dd 写文件大小" sh -c 'dd if=/dev/zero of=sf.bin bs=100 count=3 2>/dev/null; test "$(wc -c <sf.bin)" = 300; rm -f sf.bin'
-t "ls -l 可读" sh -c 'touch sf.f; ls -l sf.f | grep -q -- "-rw"; rm -f sf.f'
-t "ls -a 隐藏" sh -c 'touch .sfh; ls -a | grep -q ".sfh"; rm -f .sfh'
-t "stat 文件" sh -c 'touch sf.f; stat sf.f >/dev/null 2>&1; rc=$?; rm -f sf.f; test $rc = 0'
-t "find 深度递归" sh -c 'd=sf.d; rm -rf $d; mkdir -p $d/a/b; echo z>$d/a/b/z; find $d -name z | grep -q z; rm -rf $d'
-t "find -type d" sh -c 'd=sf.d; rm -rf $d; mkdir -p $d/x; find $d -type d | grep -q x; rm -rf $d'
-t "chmod 位" sh -c 'touch sf.f; chmod 755 sf.f; test "$(stat -c %a sf.f 2>/dev/null || stat -f %Lp sf.f)" = 755; rm -f sf.f'
-t "touch 时间戳" sh -c 'touch sf.f; sleep 1; touch -d 2000-01-01 sf.f 2>/dev/null || touch -t 200001010000 sf.f; test -e sf.f; rm -f sf.f'
+t "/dev/zero + dd 写文件大小" sh -c '
+	rm -f sf.bin dd.err
+	dd if=/dev/zero of=sf.bin bs=100 count=3 2>dd.err; dd_rc=$?
+	size=$(wc -c <sf.bin 2>/dev/null) || size=missing
+	if [ "$dd_rc" = 0 ] && [ "$size" = 300 ]; then rm -f sf.bin dd.err; exit 0; fi
+	echo "dd_rc=$dd_rc size=$size" >&2; cat dd.err >&2; rm -f sf.bin dd.err; exit 1
+'
+t "写入 /dev/zero 被丢弃" sh -c 'printf x >/dev/zero'
+t "ls -l 可读" sh -c 'touch sf.f && ls -l sf.f | grep -q -- "-rw" && rm -f sf.f'
+t "ls -a 隐藏" sh -c 'touch .sfh && ls -a | grep -q ".sfh" && rm -f .sfh'
+t "stat 文件" sh -c 'touch sf.f && stat sf.f >/dev/null 2>&1 && rm -f sf.f'
+t "find 深度递归" sh -c 'd=sf.d; rm -rf "$d" && mkdir -p "$d/a/b" && echo z>"$d/a/b/z" && find "$d" -name z | grep -q z && rm -rf "$d"'
+t "find -type d" sh -c 'd=sf.d; rm -rf "$d" && mkdir -p "$d/x" && find "$d" -type d | grep -q x && rm -rf "$d"'
+if [ "$IS_WIN" = 1 ]; then
+	ws "chmod 位" "win: NTFS 权限不等价 POSIX mode，见 KNOWN-LIMITATIONS"
+else
+	t "chmod 位" sh -c 'touch sf.f && chmod 755 sf.f && test "$(stat -c %a sf.f 2>/dev/null || stat -f %Lp sf.f)" = 755 && rm -f sf.f'
+fi
+t "touch 时间戳" sh -c 'touch sf.f && (touch -d 2000-01-01 sf.f 2>/dev/null || touch -t 200001010000 sf.f) && test -e sf.f && rm -f sf.f'
 t "seq/read 生成" sh -c 'seq 1 5 | wc -l | grep -q 5'
-t "truncate/扩展" sh -c 'echo abc > sf.f; truncate -s 10 sf.f 2>/dev/null; test "$(wc -c <sf.f)" = 10; rm -f sf.f'
+t "truncate/扩展" sh -c 'echo abc > sf.f && truncate -s 10 sf.f 2>/dev/null && test "$(wc -c <sf.f)" = 10 && rm -f sf.f'
 gsum
 
 GNO="C"
@@ -141,26 +182,44 @@ t "od 十六进制" sh -c 'echo hi | od -tx1 | grep -q "68 69" || echo hi | od -
 t "hexdump" sh -c 'echo hi | hexdump -C | grep -q "68 69"'
 t "base64 编码" sh -c 'test "$(echo hi | base64 | tr -d "\n")" = aGkK'
 t "base64 解码" sh -c 'echo aGk= | base64 -d | grep -q hi'
-t "comm 求交" sh -c 'printf "x\ny\n" | sort > a; printf "x\nz\n" | sort > b; comm -12 a b | grep -q "^x$"; rm -f a b'
-t "join" sh -c 'printf "1 x\n" > a; printf "1 y\n" > b; join a b | grep -q "1 x y"; rm -f a b'
-t "paste 并排" sh -c 'printf "a\n" > a; printf "1\n" > b; paste a b | grep -q "a[[:space:]]*1"; rm -f a b'
+t "comm 求交" sh -c 'printf "x\ny\n" | sort > a && printf "x\nz\n" | sort > b && comm -12 a b | grep -q "^x$" && rm -f a b'
+tn join "join" sh -c 'printf "1 x\n" > a && printf "1 y\n" > b && join a b | grep -q "1 x y" && rm -f a b'
+t "paste 并排" sh -c 'printf "a\n" > a && printf "1\n" > b && paste a b | grep -q "a[[:space:]]*1" && rm -f a b'
 t "fold 折行" sh -c 'echo abcd | fold -w2 | head -1 | grep -q "^ab$"'
 t "expand 展开制表" sh -c 'printf "a\tb\n" | expand | grep -qE "a[ ]+b"'
 gsum
 
 GNO="D"
 group "归档与压缩"
-t "tar czf/解出" sh -c 'd=sf.d; rm -rf $d; mkdir -p $d/sub; echo data>$d/sub/f; tar czf sf.tgz $d && tar xzf sf.tgz -O $d/sub/f 2>/dev/null | grep -q data; rm -rf $d sf.tgz'
-t "tar cjf (bzip2)" sh -c 'd=sf.d; rm -rf $d; mkdir $d; echo b>$d/f; tar cjf sf.tbz $d 2>/dev/null && tar xjf sf.tbz -O $d/f 2>/dev/null | grep -q b; rm -rf $d sf.tbz'
-t "tar cJf (xz)" sh -c 'd=sf.d; rm -rf $d; mkdir $d; echo x>$d/f; tar cJf sf.txz $d 2>/dev/null && tar xJf sf.txz -O $d/f 2>/dev/null | grep -q x; rm -rf $d sf.txz'
-t "gzip 往返" sh -c 'echo data | gzip -c > sf.gz && gzip -dc sf.gz | grep -q data; rm -f sf.gz'
-t "gzip 多级压缩" sh -c 'echo data | gzip -9 -c > sf.gz && gzip -dc sf.gz | grep -q data; rm -f sf.gz'
-t "bzip2 往返" sh -c 'echo data | bzip2 -c > sf.bz2 && bunzip2 -c sf.bz2 | grep -q data; rm -f sf.bz2'
-t "xz 往返" sh -c 'echo data | xz -c > sf.xz && xzcat sf.xz | grep -q data; rm -f sf.xz'
-t "lzma 往返" sh -c 'echo data | lzma -c > sf.lzma && unlzma -c sf.lzma 2>/dev/null | grep -q data; rm -f sf.lzma'
-t "cpio 打包解出" sh -c 'd=sf.d; rm -rf $d; mkdir $d; echo c>$d/f; (cd $d && echo f | cpio -o -H newc 2>/dev/null) > sf.cpio && cpio -i -d -F sf.cpio 2>/dev/null; grep -q c $d/f 2>/dev/null; rm -rf $d sf.cpio'
-t "unzip/zip 往返" sh -c 'echo z > sf.f; (command -v zip >/dev/null || busybox unzip 2>/dev/null); busybox --list | grep -q zip || { echo z>sf.f; gzip -c sf.f > sf.f.gz; true; }; rm -f sf.f'
-t "ar 创建/列出/解出" sh -c 'echo hi > sf.txt; ar r sf.a sf.txt && ar t sf.a | grep -q sf.txt && mkdir -p sf.arx && (cd sf.arx && ar x ../sf.a) && grep -q hi sf.arx/sf.txt; rm -rf sf.txt sf.a sf.arx'
+t "tar czf/解出" sh -c 'd=sf.d; rm -rf "$d" && mkdir -p "$d/sub" && echo data>"$d/sub/f" && tar czf sf.tgz "$d" && tar xzf sf.tgz -O "$d/sub/f" 2>/dev/null | grep -q data && rm -rf "$d" sf.tgz'
+t "tar cjf (bzip2)" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo b>"$d/f" && tar cjf sf.tbz "$d" 2>/dev/null && tar xjf sf.tbz -O "$d/f" 2>/dev/null | grep -q b && rm -rf "$d" sf.tbz'
+if BBTEST_XZ_ENCODER=$(bbp_external_xz 2>/dev/null) && bbp_xz_encode_available; then
+	BBTEST_XZ_DIR=${BBTEST_XZ_ENCODER%/*}
+	BBTEST_TAR_PATH="$BBTEST_XZ_DIR:${PATH:-}"
+	export BBTEST_XZ_ENCODER BBTEST_TAR_PATH
+	t "tar cJf (外部 xz)" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo x>"$d/f" && PATH="$BBTEST_TAR_PATH" tar cJf sf.txz "$d" 2>/dev/null && tar xJf sf.txz -O "$d/f" 2>/dev/null | grep -q x && rm -rf "$d" sf.txz'
+	t "xz 往返" sh -c 'echo data | "$BBTEST_XZ_ENCODER" -c > sf.xz && xzcat sf.xz | grep -q data && rm -f sf.xz'
+else
+	ws "tar cJf (外部 xz)" "未找到能编码的外部 xz；BusyBox xz 仅用于解码"
+	ws "xz 往返" "BusyBox xz 仅解码，未找到通过往返验证的外部 xz"
+fi
+t "gzip 往返" sh -c 'echo data | gzip -c > sf.gz && gzip -dc sf.gz | grep -q data && rm -f sf.gz'
+t "gzip 多级压缩" sh -c 'echo data | gzip -9 -c > sf.gz && gzip -dc sf.gz | grep -q data && rm -f sf.gz'
+t "bzip2 往返" sh -c 'echo data | bzip2 -c > sf.bz2 && bunzip2 -c sf.bz2 | grep -q data && rm -f sf.bz2'
+if BBTEST_LZMA_ENCODER=$(bbp_external_lzma 2>/dev/null) && bbp_lzma_encode_available; then
+	export BBTEST_LZMA_ENCODER
+	t "lzma 往返" sh -c 'echo data | "$BBTEST_LZMA_ENCODER" -c > sf.lzma && unlzma -c sf.lzma 2>/dev/null | grep -q data && rm -f sf.lzma'
+else
+	ws "lzma 往返" "BusyBox lzma 仅解码，未找到可编码的外部 lzma"
+fi
+t "cpio 打包解出" sh -c 'd=sf.d; rm -rf "$d" && mkdir "$d" && echo c>"$d/f" && (cd "$d" && echo f | cpio -o -H newc 2>/dev/null) > sf.cpio && rm -rf "$d/out" && mkdir "$d/out" && (cd "$d/out" && cpio -i -d -F ../../sf.cpio 2>/dev/null) && grep -q c "$d/out/f" && rm -rf "$d" sf.cpio'
+if BBTEST_ZIP_ENCODER=$(bbp_external_zip 2>/dev/null) && bbp_zip_encode_available; then
+	export BBTEST_ZIP_ENCODER
+	t "unzip/zip 往返" sh -c 'rm -rf sf.zipx && mkdir sf.zipx && echo z > sf.zipx/f && (cd sf.zipx && "$BBTEST_ZIP_ENCODER" -q ../sf.zip f) && mkdir sf.unzipx && (cd sf.unzipx && unzip -q ../sf.zip) && cmp sf.zipx/f sf.unzipx/f && rm -rf sf.zipx sf.unzipx sf.zip'
+else
+	ws "unzip/zip 往返" "未找到通过往返验证的外部 zip 编码器"
+fi
+t "ar 创建/列出/解出" sh -c 'echo hi > sf.txt && ar r sf.a sf.txt && ar t sf.a | grep -q sf.txt && mkdir -p sf.arx && (cd sf.arx && ar x ../sf.a) && grep -q hi sf.arx/sf.txt && rm -rf sf.txt sf.a sf.arx'
 gsum
 
 GNO="E"
@@ -176,21 +235,21 @@ t "参数展开 \${x#}" sh -c 'x=abc.txt; test "${x#abc}" = .txt'
 t "参数展开 \${x%}" sh -c 'x=abc.txt; test "${x%.txt}" = abc'
 t "参数展开 \${x:-}" sh -c 'unset y; test "${y:-dflt}" = dflt'
 t "命令替换 \$()" sh -c 'test "$(echo ok)" = ok'
-t "管道与 \$?" sh -c 'echo x | grep -q x; test $? = 0'
-t "多命令 && / ;" sh -c 'true && true; test $? = 0'
+t "管道与 \$?" sh -c 'echo x | grep -q x && test $? = 0'
+t "多命令 && / ;" sh -c 'true && true && test $? = 0'
 t "子 shell ( )" sh -c '(cd /; test "$(pwd)" = /)'
 t "后台 & + wait" sh -c 'sleep 0.2 & wait; echo done | grep -q done'
-t "重定向 < > >>" sh -c 'echo 1>sf.o; echo 2>>sf.o; test "$(wc -l <sf.o)" = 2; rm -f sf.o'
+t "重定向 < > >>" sh -c 'rm -f sf.o; echo 1 >sf.o; r1=$?; echo 2 >>sf.o; r2=$?; test "$r1" = 0 && test "$r2" = 0 && test "$(wc -l <sf.o)" = 2 && rm -f sf.o'
 t "here-doc" sh -c 'cat <<EOF > sf.h
 line1
 EOF
-grep -q line1 sf.h; rm -f sf.h'
+grep -q line1 sf.h && rm -f sf.h'
 t "位置参数 shift" sh -c 'set a b c; shift; test "$1" = b'
 t "test 运算" sh -c 'test 5 -gt 3 -a 2 -le 2'
 t "引号保留" sh -c 'x="a b"; for w in $x; do echo $w; done | wc -l | grep -q 2'
 t "环境变量导出" sh -c 'export E1=v1; sh -c "test \"\$E1\" = v1"'
 t "局部变量陷阱修正" sh -c 'i=0; for i in 1 2; do :; done; test "$i" = 2'
-t "glob 展开" sh -c 'mkdir -p sf.g; touch sf.g/a1 sf.g/b2; test "$(echo sf.g/* | wc -w)" = 2; rm -rf sf.g'
+t "glob 展开" sh -c 'mkdir -p sf.g && touch sf.g/a1 sf.g/b2 && test "$(echo sf.g/* | wc -w)" = 2 && rm -rf sf.g'
 t "printf %s" sh -c 'test "$(printf "%s-%s" a b)" = a-b'
 t "&& || 短路" sh -c 'false || echo ok | grep -q ok'
 gsum
@@ -198,11 +257,11 @@ gsum
 GNO="F"
 group "进程/系统/信息"
 tm "id -u 数字" "^[0-9]+$" id -u
-ts "whoami 非空(平台/沙箱)" sh -c 'whoami 2>/dev/null | grep -q .'
+t "whoami 用户名" bbp_username
 tm "env 变量透传" "FOO=bar" sh -c 'FOO=bar env | grep FOO=bar'
 tm "printenv" "bar" sh -c 'FOO=bar printenv FOO'
 tm "uname -m/-s/-r" "." sh -c 'uname -m; uname -s; uname -r | grep -q .'
-ts "arch(输出架构)" sh -c 'arch 2>/dev/null | grep -q .'
+t "arch(输出架构)" sh -c 'arch 2>/dev/null | grep -q .'
 t "sleep 0.5 后继续" sh -c 'sleep 0.5 && echo ok | grep -q ok'
 tm "date 格式" "^20[0-9][0-9]-" sh -c 'date +%Y-%m-%d'
 t "date -u UTC" sh -c 'date -u | grep -qiE "UTC|GMT"'
@@ -213,28 +272,48 @@ else
 fi
 t "free 内存行" sh -c 'free 2>/dev/null | grep -q "Mem:"'
 t "uptime" sh -c 'uptime 2>/dev/null | grep -qiE "up|min|day|load"'
-ts "ps (平台/沙箱软项)" sh -c 'ps -o pid= 2>/dev/null | head -1 | grep -qE "^[0-9]" || ps | head -2 | grep -qiE "pid|cmd"'
+t "ps 基本进程表" sh -c 'ps -o pid= 2>/dev/null | head -1 | grep -qE "^[[:space:]]*[0-9]" || ps | head -2 | grep -qiE "pid|cmd"'
 t "hostname 显示" sh -c 'hostname 2>/dev/null | grep -q .'
-ts "hostname -s 短名" sh -c 'h=$(hostname -s 2>/dev/null); test -n "$h"'
-ts "dnsdomainname 可执行" sh -c 'dnsdomainname >/dev/null 2>&1; test $? -ge 0'
-ts "kill 自身信号(TERM)" sh -c 'sh -c "kill -TERM \$\$" 2>/dev/null; r=$?; test $r = 143 -o $r = 0'
+t "hostname -s 短名" sh -c 'h=$(hostname -s 2>/dev/null); test -n "$h"'
+t "dnsdomainname（空域名有效）" bbp_dns_domain
+if [ "$IS_WIN" = 1 ]; then
+	ws "kill 自身信号(TERM)" "win: 信号退出状态不属于 POSIX 一致能力"
+else
+	t "kill 自身信号(TERM)" sh -c 'rm -f signal-survived; sh -c "kill -TERM \$\$; echo survived > signal-survived" 2>/dev/null; r=$?; test "$r" = 143 && test ! -e signal-survived'
+fi
 t "kill -0 探测" sh -c 'kill -0 $$ 2>/dev/null'
-ts "pgrep/pidof(需 /proc, 平台软项)" sh -c 'pgrep -f smoke-full >/dev/null 2>&1 || pgrep sh >/dev/null 2>&1 || pidof sh >/dev/null 2>&1'
-ts "nproc(cosmo 上游缺口或可用)" sh -c 'nproc 2>/dev/null | grep -qE "^[0-9]+$"'
-ts "uptime -s 启动时间" sh -c 'uptime -s 2>/dev/null | grep -qE "^20[0-9][0-9]-"'
+if bbp_process_search_available; then
+	t "pgrep -f 名称搜索" bbp_process_search_available
+else
+	ws "pgrep -f 名称搜索" "当前宿主没有可用 /proc 命令行搜索；脚本应保存子进程 PID"
+fi
+t "nproc CPU 数量及 ignore 边界" sh -c '
+	n=$(nproc) && all=$(nproc --all) && zero=$(nproc --ignore=0) && one=$(nproc --ignore=1) && huge=$(nproc --ignore=999999) || exit
+	case "$n:$all:$zero:$one:$huge" in *[!0-9:]*) exit 1 ;; esac
+	[ "$n" -ge 1 ] && [ "$all" -ge 1 ] && [ "$zero" -eq "$n" ] || exit
+	if [ "$n" -gt 1 ]; then [ "$one" -eq $((n - 1)) ]; else [ "$one" -eq 1 ]; fi
+	[ "$huge" -eq 1 ]
+'
+t "uptime -s 启动时间" sh -c 'uptime -s 2>/dev/null | grep -qE "^20[0-9][0-9]-"'
 t "stat 自身" sh -c 'stat / >/dev/null 2>&1 || stat . >/dev/null 2>&1'
 gsum
 
 GNO="G"
 group "本地网络(回环, 不依赖外网)"
-P=23241
-if [ "$IS_WIN" = 1 ]; then
+P=$((23000 + ($$ % 1000)))
+if [ "${BBTEST_NETWORK:-0}" != 1 ]; then
+	ws "nc 本地回环" "默认离线；设置 BBTEST_NETWORK=1 启用"
+	ws "telnet 本地回显" "默认离线；设置 BBTEST_NETWORK=1 启用"
+	ws "tcp 双向 socket" "默认离线；设置 BBTEST_NETWORK=1 启用"
+	ws "nslookup localhost" "默认离线；设置 BBTEST_NETWORK=1 启用"
+elif [ "$IS_WIN" = 1 ]; then
 	# cosmo #1174: Windows fork 后 accept 场景 socket 继承未根治 + 信号/进程模拟
 	# → nc -l / tcp 服务端回环测试不可靠(会 FAIL 甚至挂死), 跳过; 客户端 nslookup 保留
 	ws "nc 本地回环(服务端)" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
 	ws "telnet 本地回显" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
 	ws "tcp 双向 socket" "win: cosmo #1174, 见 KNOWN-LIMITATIONS"
 	echo "      (Windows: 网络组以 nslookup 客户端为准; nc/telnet/tcp 服务端缺口见 KNOWN-LIMITATIONS)"
+	t "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
 else
 	# 简易回显服务器: busybox nc -l -p -e cat(若 -e 支持) 否则退化为只测连接
 	if nc -h 2>&1 | grep -q '\-e'; then
@@ -245,11 +324,11 @@ else
 			out=\$(echo hello | nc -w2 127.0.0.1 $P 2>/dev/null)
 			kill \$srv 2>/dev/null
 			test \"\$out\" = hello"
-		tn "telnet 回环回显" "telnet 本地回显" sh -c "
+		tn telnet "telnet 本地回显" sh -c "
 			nc -l -p $P -e cat >/dev/null 2>&1 &
 			srv=\$!
 			sleep 0.3
-			out=\$(echo tlx | telnet 127.0.0.1 $P 2>/dev/null | tr -d '\r')
+			out=\$(echo tlx | timeout 5 telnet 127.0.0.1 $P 2>/dev/null | tr -d '\r')
 			kill \$srv 2>/dev/null
 			echo \"\$out\" | grep -q tlx"
 	else
@@ -259,36 +338,31 @@ else
 			srv=\$!
 			sleep 0.3
 			echo ping | nc -w2 127.0.0.1 $P >/dev/null 2>&1
-			kill \$srv 2>/dev/null
-			true"
-		ts "telnet 连接握手(soft)" sh -c "
-			nc -l -p $P >/dev/null 2>&1 &
-			srv=\$!
-			sleep 0.3
-			echo q | telnet 127.0.0.1 $P 2>/dev/null; r=\$?
+			r=\$?
 			kill \$srv 2>/dev/null
 			test \$r = 0"
+		ws "telnet 连接握手" "nc 不支持 -e，当前用例无法断言回显语义"
 	fi
 	# TCP 客户端纯连接(无需服务端回显语义) — 用 nc -l 后台
 	t "tcp 双向 socket 基本" sh -c "
-		nc -l -p $((P+1)) >/tmp/ncout 2>&1 &
+		nc -l -p $((P+1)) >ncout 2>&1 &
 		srv=\$!
 		sleep 0.3
 		printf 'abc' | nc -w2 127.0.0.1 $((P+1)) >/dev/null 2>&1
 		sleep 0.2
 		kill \$srv 2>/dev/null
-		grep -q abc /tmp/ncout 2>/dev/null; rc=\$?
-		rm -f /tmp/ncout
+		grep -q abc ncout 2>/dev/null; rc=\$?
+		rm -f ncout
 		test \$rc = 0"
 	echo "      (网络组以 nc/telnet 本地回环为准, wget 走外网组可选)"
+	t "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
 fi
-ts "nslookup localhost(本地)" sh -c 'nslookup localhost 2>/dev/null | grep -qiE "name|server|127.0.0.1"'
 gsum
 
 GNO="H"
 group "多字节/Unicode"
 t "UTF-8 中文字符串" sh -c 'echo 中文测试 | grep -q 中文'
-t "ls 中文文件名" sh -c 'mkdir -p sf.u && touch sf.u/文件.txt && ls sf.u | grep -q 文件; rm -rf sf.u'
+t "ls 中文文件名" sh -c 'mkdir -p sf.u && touch sf.u/文件.txt && ls sf.u | grep -q 文件 && rm -rf sf.u'
 t "wc -m 字符计数(宽)" sh -c 'printf "中文ab" | wc -m | grep -qE "^[0-9]+$"'
 t "printf UTF-8" sh -c 'printf "你\n" | grep -q 你'
 t "sed 中文替换" sh -c 'echo 你好世界 | sed s/你好/您好/ | grep -q 您好'
@@ -297,25 +371,25 @@ gsum
 
 GNO="I"
 group "make / 工具链集成"
-t "make 执行配方" sh -c 'printf "all:\n\techo make-ok\n" > Makefile.sf && make -f Makefile.sf 2>/dev/null | grep -q make-ok; rm -f Makefile.sf'
-t "make 目标依赖" sh -c 'printf "p: q\n\ttouch p\nq:\n\ttouch q\n" > Makefile.sf && make -f Makefile.sf p 2>/dev/null && test -f p -a -f q; rm -f Makefile.sf p q'
+t "make 执行配方" sh -c 'printf "all:\n\techo make-ok\n" > Makefile.sf && make -f Makefile.sf 2>/dev/null | grep -q make-ok && rm -f Makefile.sf'
+t "make 目标依赖" sh -c 'printf "p: q\n\ttouch p\nq:\n\ttouch q\n" > Makefile.sf && make -f Makefile.sf p 2>/dev/null && test -f p -a -f q && rm -f Makefile.sf p q'
 tm "sha256sum 向量" "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" sh -c 'printf "" | sha256sum'
 tm "sha1sum 向量" "da39a3ee5e6b4b0d3255bfef95601890afd80709" sh -c 'printf "" | sha1sum'
 tm "md5sum 向量" "d41d8cd98f00b204e9800998ecf8427e" sh -c 'printf "" | md5sum'
-t "cksum 一致" sh -c 'echo abc > sf.f; c1=$(cksum <sf.f); c2=$(cksum <sf.f); test "$c1" = "$c2"; rm -f sf.f'
-t "crc32 一致" sh -c 'echo abc > sf.f; crc32 sf.f >/dev/null 2>&1; rm -f sf.f'
-t "base32 往返" sh -c 'echo hi | base32 > sf.b32 && base32 -d sf.b32 2>/dev/null | grep -q hi; rm -f sf.b32'
-t "uudecode 往返" sh -c 'echo hi | uuencode f > sf.uu && uudecode -o sf.f sf.uu 2>/dev/null && grep -q hi sf.f; rm -f sf.uu sf.f'
+t "cksum 一致" sh -c 'echo abc > sf.f && c1=$(cksum <sf.f) && c2=$(cksum <sf.f) && test "$c1" = "$c2" && rm -f sf.f'
+t "crc32 一致" sh -c 'echo abc > sf.f && crc32 sf.f >/dev/null 2>&1 && rm -f sf.f'
+t "base32 往返" sh -c 'echo hi | base32 > sf.b32 && base32 -d sf.b32 2>/dev/null | grep -q hi && rm -f sf.b32'
+t "uudecode 往返" sh -c 'echo hi | uuencode f > sf.uu && uudecode -o sf.f sf.uu 2>/dev/null && grep -q hi sf.f && rm -f sf.uu sf.f'
 gsum
 
 GNO="J"
 group "vi/编辑器与 misc"
-t "vi 可启动" sh -c 'echo hi > sf.v; vi -c "q!" sf.v </dev/null >/dev/null 2>&1; test $? = 0 -o $? = 1; rm -f sf.v'
+t "vi 可启动" sh -c 'echo hi > sf.v && vi -c "q!" sf.v </dev/null >/dev/null 2>&1; rc=$?; rm -f sf.v; test "$rc" = 0 -o "$rc" = 1'
 tm "cat -n 行号" "^[[:space:]]*1" sh -c 'echo x | cat -n'
 t "od -c 可视" sh -c 'echo x | od -c | grep -q x'
-t "strings 二进制字符串" sh -c 'printf "hi\0world" > sf.b; strings sf.b 2>/dev/null | grep -q hi; rm -f sf.b'
+t "strings 二进制字符串" sh -c 'printf "hello\0world" > sf.b && strings sf.b 2>/dev/null | grep -q hello && rm -f sf.b'
 tm "rev 反转" "olleh" sh -c 'echo hello | rev'
-tm "shuf 排列" "^[ab]$" sh -c 'echo a; echo b | shuf'
+tm "shuf 排列" "^[ab]" sh -c 'printf "a\nb\n" | shuf'
 tm "yes 输出截断" "^y$" sh -c 'yes | head -1'
 t "cal 日历" sh -c 'cal 2>/dev/null | grep -qE "[A-Za-z]+ +20[0-9][0-9]|[0-9][0-9]"'
 t "seq -w 补零" sh -c 'seq -w 9 11 | head -1 | grep -q "^09$"'
@@ -328,13 +402,12 @@ echo "=================================================="
 echo "  完整冒烟结果:"
 echo "    总通过 PASS : $PASS"
 echo "    总失败 FAIL : $FAIL"
-echo "    跳过 SKIP   : $SKIP   (未编译/不支持)"
-echo "    软失败 SOFT : $SOFT   (平台/环境差异)"
+echo "    跳过 SKIP   : $SKIP   (未编译/经行为探测确认不支持)"
 echo "=================================================="
 if [ "$FAIL" -gt 0 ]; then
 	echo "结果: 存在 FAIL, 见上(rc=1)"
 	exit 1
 else
-	echo "结果: 全部通过/软失败 (rc=0)"
+	echo "结果: 全部通过或明确跳过 (rc=0)"
 	exit 0
 fi

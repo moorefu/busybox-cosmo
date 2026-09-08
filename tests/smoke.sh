@@ -1,6 +1,7 @@
 #!/bin/sh
-# busybox APE 冒烟测试 (由 busybox 自带的 sh 执行: busybox.com sh smoke.sh)
-# 每项测试验证输出正确性(而非仅退出码), 输出 PASS/FAIL 汇总
+# 快速、离线的 BusyBox APE 冒烟；完整行为请运行 ash-contract/smoke-full。
+. "$(dirname "$0")/testlib.sh"
+bbtest_init smoke
 PASS=0
 FAIL=0
 SKIP=0
@@ -8,7 +9,7 @@ SKIP=0
 t() {
 	desc="$1"
 	shift
-	if "$@" >/dev/null 2>&1; then
+	if bbtest_run "$@"; then
 		echo "PASS: $desc"
 		PASS=$((PASS + 1))
 	else
@@ -28,15 +29,15 @@ echo "===== busybox APE smoke test ====="
 # --- 基础 ---
 t "echo" echo smoke-ok
 t "uname" sh -c 'uname -m | grep -q .'
-t "date" sh -c 'date | grep -q 20'
-t "pwd" sh -c 'pwd | grep -q /'
+t "date" sh -c 'date +%Y | grep -qE "^[0-9]{4}$"'
+t "pwd" sh -c 'case "$PWD" in /*) exit 0;; *) exit 1;; esac'
 
 # --- 文件操作 ---
 t "mkdir+cp+cmp+rm" sh -c 'mkdir -p smoke.d && echo x > smoke.d/f1 && cp smoke.d/f1 smoke.d/f2 && cmp smoke.d/f1 smoke.d/f2 && rm -rf smoke.d'
 t "dd bs/count" sh -c 'printf xxxx | dd bs=2 count=2 2>/dev/null | wc -c | grep -q 4'
-t "ls 目录" sh -c 'mkdir -p smoke.d; ls . | grep -q smoke.d'
-t "ln -s" sh -c 'mkdir -p smoke.d && echo x > smoke.d/f1 && ln -sfn smoke.d/f1 smoke.link && test -e smoke.link && rm -f smoke.link'
-t "find 递归" sh -c 'mkdir -p smoke.d/sub && echo x > smoke.d/sub/f2 && find smoke.d -name f2 | grep -q f2'
+t "ls 目录" sh -c 'mkdir -p smoke.d && ls . | grep -qx smoke.d && rm -rf smoke.d'
+t "ln -s" sh -c 'mkdir -p smoke.d && echo x > smoke.d/f1 && ln -sfn smoke.d/f1 smoke.link && test -e smoke.link && rm -rf smoke.d smoke.link'
+t "find 递归" sh -c 'mkdir -p smoke.d/sub && echo x > smoke.d/sub/f2 && test "$(find smoke.d -name f2)" = smoke.d/sub/f2 && rm -rf smoke.d'
 
 # --- 文本工具 ---
 t "grep 基本" sh -c 'echo abc123 | grep -q abc123'
@@ -64,21 +65,23 @@ t "here-string 逻辑" sh -c 'test 5 -gt 3 && test ! 2 -gt 5'
 t "printf 转义" sh -c 'printf "a\tb\n" | grep -q a'
 
 # --- 进程/系统 ---
-t "ps" sh -c 'ps | head -2 | grep -qi "pid\|cmd"'
-t "kill 自身信号" sh -c 'sh -c "kill -TERM \$\$"; test $? = 143 -o $? = 0'
-t "timeout 命令" sh -c 'timeout 1 sleep 0.2; echo t-ok'
+if sh -c 'ps | head -2 | grep -qi "pid\|cmd"' >/dev/null 2>&1; then
+	echo "PASS: ps"
+	PASS=$((PASS + 1))
+else
+	s "ps（宿主沙箱可能禁止进程枚举）"
+fi
+t "kill 子 shell 信号状态" sh -c 'sh -c "kill -TERM \$\$"; test "$?" = 143'
+t "timeout 命令" sh -c 'timeout 1 sleep 0.1'
 t "env" sh -c 'FOO=bar env | grep -q FOO=bar'
 
-# --- 网络 (核心回归) ---
-t "wget http" sh -c 'wget -O /dev/null http://www.baidu.com 2>/dev/null'
-t "wget https (TLS)" sh -c 'wget -O /dev/null https://www.baidu.com 2>/dev/null'
-t "nc 回环" sh -c 'echo ping | nc -w 1 127.0.0.1 9 >/dev/null 2>&1; echo nc-ok'
-t "dns 解析" sh -c 'nslookup www.baidu.com 2>/dev/null | grep -q .'
+# 网络 applet 的确定性本地回环测试在 smoke-full；快速冒烟不访问公网。
 
 # --- 归档/压缩 ---
 t "tar 打包解包" sh -c 'mkdir -p s.d && echo data > s.d/f && tar czf s.tgz s.d && tar xzf s.tgz -O s.d/f | grep -q data && rm -rf s.d s.tgz'
 t "gzip 往返" sh -c 'echo data | gzip > s.gz && gzip -dc s.gz | grep -q data && rm -f s.gz'
 t "gzip -dc 解压" sh -c 'echo dummy > d.txt && gzip -c d.txt > d.gz && gzip -dc d.gz | grep -q dummy && rm -f d.txt d.gz'
+t "gzip 非法输入失败" sh -c 'printf invalid > bad.gz; gzip -dc bad.gz >/dev/null 2>&1; test "$?" -ne 0'
 
 # --- 设备/特殊文件 ---
 t "/dev/null" sh -c 'cat /dev/null > /dev/null; echo dev-null-ok'

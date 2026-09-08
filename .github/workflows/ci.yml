@@ -20,16 +20,9 @@ jobs:
     steps:
       - name: 检出源码
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: 检查 Shell 语法
+      - name: 语法、补丁序列与维护脚本回归
         shell: bash
-        run: |
-          set -euo pipefail
-          for file in scripts/*.sh toolchain/*.sh install.sh assets/loaders/install-linux.sh; do
-            bash -n "$file"
-          done
-          for file in tests/*.sh; do
-            sh -n "$file"
-          done
+        run: make check
 
   build:
     name: 构建
@@ -40,7 +33,7 @@ jobs:
       - name: 检出源码
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: 安装宿主依赖
-        run: sudo apt-get update && sudo apt-get install -y bzip2 patch unzip zip
+        run: sudo apt-get update && sudo apt-get install -y bzip2 patch unzip zip xz-utils
       - name: 设置可复现时间戳
         shell: bash
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
@@ -49,7 +42,7 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: toolchain/cosmo
-          key: cosmo-toolchain-${{ runner.os }}-${{ hashFiles('toolchain/*.sh', 'patches/cosmo/**/*') }}
+          key: cosmo-toolchain-v4-${{ runner.os }}-${{ hashFiles('toolchain/*.sh', 'scripts/patch-series.py', 'patches/cosmo/**/*') }}
       - name: 从锁定源码构建定制工具链
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -60,10 +53,50 @@ jobs:
           test -x toolchain/cosmo/bin/x86_64-unknown-cosmo-cc
           test -x toolchain/cosmo/bin/aarch64-unknown-cosmo-cc
           test -x toolchain/cosmo/bin/apelink
+      - name: 缓存已校验的 BusyBox 原始源码包
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: src/busybox-1.38.0.tar.bz2
+          key: busybox-source-1.38.0-34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2
+      - name: 校验真实补丁结果与生成头文件
+        run: make fetch && make check
       - name: 构建双架构 BusyBox
         run: make build
+      - name: 构建 bbtty 终端助手
+        run: make bbtty
+      - name: 构建伴生工具 (xz/zip/zstd/curl 锁定源码供应线复现)
+        shell: bash
+        run: |
+          make xz
+          make zip
+          make zstd
+          make curl
+      - name: 上传伴生工具
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: busybox-tools
+          path: dist/tools
+          if-no-files-found: error
+          retention-days: 7
       - name: 生成发布目录
         run: scripts/package-release.sh
+      - name: 生成分层伴生包 (archive/net, 可复现)
+        shell: bash
+        run: |
+          make cacert
+          scripts/package-archive.sh
+          scripts/package-net.sh
+      - name: 上传分层伴生包
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: busybox-layers
+          path: |
+            dist/busybox-archive.zip
+            dist/busybox-archive.zip.sha256
+            dist/busybox-net.zip
+            dist/busybox-net.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
       - name: 校验 APE 的 64K 页布局
         shell: bash
         run: |
@@ -92,13 +125,52 @@ jobs:
           echo "min top-level OK"
           BUSYBOX_COSMO_CACHE=/tmp/minchk-cache ./busybox sh -c 'echo x | grep -qE x && echo MIN-NESTED-OK'
           echo "min nested exec OK"
+          BUSYBOX_COSMO_CACHE=/tmp/minchk-cache ./busybox ash "$GITHUB_WORKSPACE/tests/ash-contract.sh"
+      - name: 生成发布 zip 校验和
+        shell: bash
+        run: |
+          set -euo pipefail
+          ( cd dist && sha256sum busybox-cosmo-release.zip > busybox-cosmo-release.zip.sha256 )
+          ( cd dist && sha256sum busybox-min.zip > busybox-min.zip.sha256 )
+          cat dist/busybox-cosmo-release.zip.sha256 dist/busybox-min.zip.sha256
       - name: 上传 min 包
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: busybox-min
-          path: dist/busybox-min.zip
+          path: |
+            dist/busybox-min.zip
+            dist/busybox-min.zip.sha256
           if-no-files-found: error
           retention-days: 7
+      - name: 上传完整发布 zip
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: busybox-release-zip
+          path: |
+            dist/busybox-cosmo-release.zip
+            dist/busybox-cosmo-release.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
+      - name: 保存构建证据
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "commit=$(git rev-parse HEAD)"
+            echo "source_date_epoch=${SOURCE_DATE_EPOCH:-}"
+            uname -a
+            uname -m
+            file toolchain/cosmo/bin/*-cosmo-cc toolchain/cosmo/bin/apelink 2>/dev/null || true
+            sha256sum dist/release/release/* dist/busybox-min.zip 2>/dev/null || true
+          } > "$RUNNER_TEMP/build-info.txt"
+      - name: 上传构建证据
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-build-evidence
+          path: ${{ runner.temp }}/build-info.txt
+          if-no-files-found: warn
+          retention-days: 14
 
   unix-matrix:
     needs: build
@@ -110,23 +182,37 @@ jobs:
           - name: Linux x86_64
             runner: ubuntu-24.04
             arch: x86_64
+            os_family: linux
+            capability_arch: x86_64
+            name_search: builtin
             experimental: false
           - name: macOS x86_64
             runner: macos-15-intel
             arch: x86_64
+            os_family: macos
+            capability_arch: x86_64
+            name_search: unsupported
             experimental: false
           - name: Linux ARM64
             runner: ubuntu-24.04-arm
             arch: aarch64
+            os_family: linux
+            capability_arch: aarch64
+            name_search: builtin
             experimental: false
           - name: macOS ARM64（实验）
             runner: macos-15
             arch: arm64
+            os_family: macos
+            capability_arch: aarch64
+            name_search: unsupported
             experimental: true
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.experimental }}
     steps:
+      - name: 检出源码（探针）
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: 下载发布物
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -134,22 +220,141 @@ jobs:
           path: release
       - name: 恢复可执行权限
         shell: bash
-        run: chmod +x release/busybox release/busybox*.ape release/busybox.com release/assimilate release/ape-loader-*
+        run: chmod +x release/busybox release/busybox*.ape release/busybox.com release/assimilate release/ape-loader-* release/tools/bbtty.com
+      - name: 下载伴生工具 (xz/zip)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: busybox-tools
+          path: companion-tools
+      - name: 恢复伴生工具可执行权限
+        shell: bash
+        run: chmod +x companion-tools/*.com
+      - name: macOS ad-hoc 签名 (契约前, Apple Silicon 必需)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            find release companion-tools -type f \
+              \( -name '*.com' -o -name '*.ape' -o -name 'assimilate' \) -print0 |
+              while IFS= read -r -d '' f; do
+                codesign --force --sign - --timestamp=none "$f"
+              done
+            echo "macOS ad-hoc 签名完成"
+          else
+            echo "非 macOS runner, 跳过签名"
+          fi
       - name: 校验运行架构
         shell: bash
         run: test "$(uname -m)" = "${{ matrix.arch }}"
+      - name: 采集宿主与产物信息
+        shell: bash
+        run: |
+          {
+            echo "runner=${{ matrix.runner }}"
+            echo "expected_arch=${{ matrix.arch }}"
+            date -u
+            uname -a
+            uname -m
+            command -v xz && xz --version | head -1 || true
+            sw_vers 2>/dev/null || true
+            sysctl -n hw.model hw.optional.arm64 hw.optional.avx2 2>/dev/null || true
+            file release/busybox release/busybox.com release/busybox-fat.ape release/busybox-arm64.ape 2>/dev/null || true
+            sha256sum release/* 2>/dev/null || shasum -a 256 release/* 2>/dev/null || true
+          } > "$RUNNER_TEMP/platform-info.txt"
+          cat "$RUNNER_TEMP/platform-info.txt"
+      - name: 运行待定兼容性探针（报告，不阻断）
+        shell: bash
+        env:
+          BUSYBOX_COSMO_CACHE: ${{ runner.temp }}/busybox-cosmo-probe-cache
+        run: |
+          set +e
+          python3 "$GITHUB_WORKSPACE/tests/ci-platform-probe.py" \
+            "$GITHUB_WORKSPACE/release/busybox" \
+            > "$RUNNER_TEMP/platform-probe.log" 2>&1
+          probe_rc=$?
+          cat "$RUNNER_TEMP/platform-probe.log"
+          echo "探针返回值=$probe_rc（当前仅采证，待基线稳定后提升为门禁）"
       - name: 运行深度与完整测试
         shell: bash
         working-directory: release
         env:
           BUSYBOX_COSMO_CACHE: ${{ runner.temp }}/busybox-cosmo-cache
+          BBTEST_NETWORK: "1"
         run: |
           set +e
-          ./busybox sh deep-test.sh
+          ./busybox ash ash-contract.sh > "$RUNNER_TEMP/ash-contract.log" 2>&1
+          ash_rc=$?
+          cat "$RUNNER_TEMP/ash-contract.log"
+          ./busybox sh deep-test.sh > "$RUNNER_TEMP/deep-test.log" 2>&1
           deep_rc=$?
-          ./busybox sh smoke-full.sh
+          cat "$RUNNER_TEMP/deep-test.log"
+          ./busybox sh smoke-full.sh > "$RUNNER_TEMP/smoke-full.log" 2>&1
           full_rc=$?
-          test "$deep_rc" -eq 0 -a "$full_rc" -eq 0
+          cat "$RUNNER_TEMP/smoke-full.log"
+          test "$ash_rc" -eq 0 -a "$deep_rc" -eq 0 -a "$full_rc" -eq 0
+      - name: 运行兼容库契约测试
+        shell: bash
+        working-directory: release
+        env:
+          BBP_BUSYBOX: ${{ github.workspace }}/release/busybox
+          BUSYBOX_COSMO_CACHE: ${{ runner.temp }}/busybox-cosmo-contract-cache
+        run: |
+          set +e
+          ./tools/bbtty.com capabilities | grep -q '^bbtty.schema=1$'
+          bbtty_rc=$?
+          ./busybox sh portable-contract.sh > "$RUNNER_TEMP/portable-contract.log" 2>&1
+          rc=$?
+          cat "$RUNNER_TEMP/portable-contract.log"
+          ./busybox ash bbcosmo capabilities --format json > "$RUNNER_TEMP/capabilities.json"
+          capability_rc=$?
+          python3 ci-capability-gate.py "$RUNNER_TEMP/capabilities.json" \
+            --os '${{ matrix.os_family }}' \
+            --arch '${{ matrix.capability_arch }}' \
+            --name-search '${{ matrix.name_search }}'
+          gate_rc=$?
+          test "$bbtty_rc" -eq 0 -a "$rc" -eq 0 -a "$capability_rc" -eq 0 -a "$gate_rc" -eq 0
+      - name: 运行 bbtty 真实 PTY 契约
+        shell: bash
+        working-directory: release
+        run: |
+          set -o pipefail
+          python3 bbtty-pty.py "$PWD/tools/bbtty.com" 2>&1 | tee "$RUNNER_TEMP/bbtty-pty.log"
+      - name: 运行伴生工具契约 (xz/zip/zstd)
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 "$GITHUB_WORKSPACE/tests/companion-tools.py" \
+            "$GITHUB_WORKSPACE/companion-tools/xz.com" \
+            "$GITHUB_WORKSPACE/companion-tools/zip.com" \
+            "$GITHUB_WORKSPACE/release/busybox-fat.ape" \
+            --zstd "$GITHUB_WORKSPACE/companion-tools/zstd.com" \
+            2>&1 | tee "$RUNNER_TEMP/companion-tools.log"
+      - name: 运行本地 HTTPS KAT (交付 curl.com, 本回环)
+        shell: bash
+        env:
+          BBP_TEST_BUSYBOX: ${{ github.workspace }}/release/busybox-fat.ape
+        run: |
+          set -o pipefail
+          python3 "$GITHUB_WORKSPACE/tests/https-kat.py" \
+            "$GITHUB_WORKSPACE/companion-tools/curl.com" \
+            2>&1 | tee "$RUNNER_TEMP/https-kat.log"
+      - name: 上传 Unix 平台证据
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-evidence-${{ runner.os }}-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/platform-info.txt
+            ${{ runner.temp }}/platform-probe.log
+            ${{ runner.temp }}/bbtty-pty.log
+            ${{ runner.temp }}/companion-tools.log
+            ${{ runner.temp }}/https-kat.log
+            ${{ runner.temp }}/deep-test.log
+            ${{ runner.temp }}/ash-contract.log
+            ${{ runner.temp }}/smoke-full.log
+            ${{ runner.temp }}/portable-contract.log
+            ${{ runner.temp }}/capabilities.json
+          if-no-files-found: warn
+          retention-days: 14
 
   windows-matrix:
     needs: build
@@ -160,21 +365,44 @@ jobs:
           - name: Windows x86_64
             runner: windows-2022
             arch: AMD64
+            capability_arch: x86_64
+            name_search: unsupported
             experimental: false
           - name: Windows ARM64（x86_64 仿真，实验）
             runner: windows-11-arm
             arch: ARM64
+            capability_arch: x86_64
+            name_search: unsupported
             experimental: true
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.experimental }}
     timeout-minutes: 30
     steps:
+      - name: 采集宿主信息
+        shell: pwsh
+        run: |
+          @(
+            "runner=${{ matrix.runner }}"
+            "expected_arch=${{ matrix.arch }}"
+            (Get-Date).ToUniversalTime().ToString("o")
+            ((Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption)
+            "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+            "PROCESSOR_IDENTIFIER=$env:PROCESSOR_IDENTIFIER"
+          ) | Out-File -Encoding utf8 "$env:RUNNER_TEMP/platform-info.txt"
+          Get-FileHash "$env:RUNNER_TEMP/platform-info.txt" -Algorithm SHA256 | Format-List
       - name: 下载发布物
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: busybox-release
           path: release
+      - name: 记录 Windows 产物摘要
+        shell: pwsh
+        run: |
+          Get-ChildItem release -File | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $($_.Path)" } |
+            Add-Content -Encoding utf8 "$env:RUNNER_TEMP/platform-info.txt"
+          Get-Content "$env:RUNNER_TEMP/platform-info.txt"
       - name: 校验运行架构
         shell: pwsh
         run: |
@@ -182,12 +410,67 @@ jobs:
             throw "意外架构: $env:PROCESSOR_ARCHITECTURE"
           }
       - name: 运行深度与完整测试
-        shell: cmd
+        shell: pwsh
+        working-directory: release
+        env:
+          BBTEST_NETWORK: "1"
+        run: |
+          & .\busybox.com ash ash-contract.sh *> "$env:RUNNER_TEMP/ash-contract.log"
+          $ashRc = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/ash-contract.log"
+          & .\busybox.com sh deep-test.sh *> "$env:RUNNER_TEMP/deep-test.log"
+          $deepRc = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/deep-test.log"
+          & .\busybox.com sh smoke-full.sh *> "$env:RUNNER_TEMP/smoke-full.log"
+          $fullRc = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/smoke-full.log"
+          if ($ashRc -ne 0) { exit $ashRc }
+          if ($deepRc -ne 0) { exit $deepRc }
+          if ($fullRc -ne 0) { exit $fullRc }
+      - name: 运行兼容库契约测试
+        shell: pwsh
         working-directory: release
         run: |
-          busybox.com sh deep-test.sh
-          set DEEP_RC=%ERRORLEVEL%
-          busybox.com sh smoke-full.sh
-          set FULL_RC=%ERRORLEVEL%
-          if not "%DEEP_RC%"=="0" exit /b %DEEP_RC%
-          if not "%FULL_RC%"=="0" exit /b %FULL_RC%
+          $ErrorActionPreference = "Stop"
+          $bbttyCapabilities = & .\tools\bbtty.com capabilities
+          $bbttyRc = $LASTEXITCODE
+          if ($bbttyCapabilities -notcontains 'bbtty.schema=1') { throw 'bbtty schema 缺失' }
+          $env:BBP_BUSYBOX = (Join-Path (Get-Location) "busybox.com")
+          $env:BUSYBOX_COSMO_CACHE = (Join-Path $env:RUNNER_TEMP "busybox-cosmo-contract-cache")
+          & .\busybox.com sh portable-contract.sh *> "$env:RUNNER_TEMP/portable-contract.log"
+          $contractRc = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/portable-contract.log"
+          & .\busybox.com ash bbcosmo capabilities --format json > "$env:RUNNER_TEMP/capabilities.json"
+          $capabilityRc = $LASTEXITCODE
+          python .\ci-capability-gate.py "$env:RUNNER_TEMP/capabilities.json" `
+            --os windows `
+            --arch '${{ matrix.capability_arch }}' `
+            --name-search '${{ matrix.name_search }}'
+          $gateRc = $LASTEXITCODE
+          if ($bbttyRc -ne 0) { exit $bbttyRc }
+          if ($contractRc -ne 0) { exit $contractRc }
+          if ($capabilityRc -ne 0) { exit $capabilityRc }
+          if ($gateRc -ne 0) { exit $gateRc }
+      - name: 运行 bbtty 独立 Console 契约
+        shell: pwsh
+        working-directory: release
+        run: |
+          python .\bbtty-console.py .\tools\bbtty.com *> "$env:RUNNER_TEMP/bbtty-console.log"
+          $rc = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/bbtty-console.log"
+          exit $rc
+      - name: 上传 Windows 平台证据
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-evidence-${{ runner.os }}-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/bbtty-console.log
+            ${{ runner.temp }}/platform-info.txt
+            ${{ runner.temp }}/deep-test.log
+            ${{ runner.temp }}/ash-contract.log
+            ${{ runner.temp }}/smoke-full.log
+            ${{ runner.temp }}/portable-contract.log
+            ${{ runner.temp }}/capabilities.json
+          if-no-files-found: warn
+          retention-days: 14

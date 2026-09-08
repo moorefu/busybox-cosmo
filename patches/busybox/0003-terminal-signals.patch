@@ -1,0 +1,134 @@
+diff --git a/console-tools/kbd_mode.c b/console-tools/kbd_mode.c
+--- a/console-tools/kbd_mode.c
++++ b/console-tools/kbd_mode.c
+@@ -16,7 +16,7 @@
+ 
+ //applet:IF_KBD_MODE(APPLET_NOEXEC(kbd_mode, kbd_mode, BB_DIR_BIN, BB_SUID_DROP, kbd_mode))
+ 
+-//kbuild:lib-$(CONFIG_KBD_MODE) += kbd_mode.o
++//xxkbuild:lib-$(CONFIG_KBD_MODE) += kbd_mode.o
+ 
+ //usage:#define kbd_mode_trivial_usage
+ //usage:       "[-a|k|s|u] [-C TTY]"
+diff --git a/console-tools/openvt.c b/console-tools/openvt.c
+--- a/console-tools/openvt.c
++++ b/console-tools/openvt.c
+@@ -16,7 +16,7 @@
+ 
+ //applet:IF_OPENVT(APPLET(openvt, BB_DIR_USR_BIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_OPENVT) += openvt.o
++//xxkbuild:lib-$(CONFIG_OPENVT) += openvt.o
+ 
+ //usage:#define openvt_trivial_usage
+ //usage:       "[-c N] [-sw] [PROG ARGS]"
+diff --git a/console-tools/showkey.c b/console-tools/showkey.c
+--- a/console-tools/showkey.c
++++ b/console-tools/showkey.c
+@@ -14,7 +14,7 @@
+ 
+ //applet:IF_SHOWKEY(APPLET(showkey, BB_DIR_USR_BIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_SHOWKEY) += showkey.o
++//xxkbuild:lib-$(CONFIG_SHOWKEY) += showkey.o
+ 
+ //usage:#define showkey_trivial_usage
+ //usage:       "[-a | -k | -s]"
+diff --git a/coreutils/stty.c b/coreutils/stty.c
+--- a/coreutils/stty.c
++++ b/coreutils/stty.c
+@@ -35,6 +35,44 @@
+  */
+ 
+ #include "libbb.h"
++#if defined(__COSMOPOLITAN__)
++/* cosmopolitan exports termios control-index constants as extern const
++ * (self-referential macros), which breaks preprocessor #if in this file */
++#undef VINTR
++#undef VQUIT
++#undef VERASE
++#undef VKILL
++#undef VEOF
++#undef VTIME
++#undef VMIN
++#undef VSWTC
++#undef VSTART
++#undef VSTOP
++#undef VSUSP
++#undef VEOL
++#undef VREPRINT
++#undef VDISCARD
++#undef VWERASE
++#undef VLNEXT
++#undef VEOL2
++#define VINTR 0
++#define VQUIT 1
++#define VERASE 2
++#define VKILL 3
++#define VEOF 4
++#define VTIME 5
++#define VMIN 6
++#define VSTART 8
++#define VSTOP 9
++#define VSUSP 10
++#define VEOL 11
++#define VREPRINT 12
++#define VDISCARD 13
++#define VWERASE 14
++#define VLNEXT 15
++#define VEOL2 16
++#endif
++
+ #include "common_bufsiz.h"
+ 
+ #ifndef _POSIX_VDISABLE
+diff --git a/libbb/u_signal_names.c b/libbb/u_signal_names.c
+--- a/libbb/u_signal_names.c
++++ b/libbb/u_signal_names.c
+@@ -26,6 +26,46 @@
+ //config:	This behavior matches "kill -l RTMIN+n" from bash.
+ 
+ #include "libbb.h"
++#if defined(__COSMOPOLITAN__)
++/* cosmocc (4.0.2) binds these signals as extern const with per-OS values;
++ * designated initializers require compile-time constants.  Upstream cosmo
++ * master unifies signal numbers (Linux layout) - pin to those. */
++#undef SIGBUS
++#undef SIGCHLD
++#undef SIGCONT
++#undef SIGIO
++#undef SIGPOLL
++#undef SIGPWR
++#undef SIGRTMIN
++#undef SIGRTMAX
++#undef SIGSTKFLT
++#undef SIGSTOP
++#undef SIGSYS
++#undef SIGTSTP
++#undef SIGTTIN
++#undef SIGTTOU
++#undef SIGURG
++#undef SIGUSR1
++#undef SIGUSR2
++#define SIGBUS 7
++#define SIGCHLD 17
++#define SIGCONT 18
++#define SIGIO 29
++#define SIGPOLL 29
++#define SIGPWR 30
++#define SIGRTMIN 34
++#define SIGRTMAX 64
++#define SIGSTKFLT 16
++#define SIGSTOP 19
++#define SIGSYS 31
++#define SIGTSTP 20
++#define SIGTTIN 21
++#define SIGTTOU 22
++#define SIGURG 23
++#define SIGUSR1 10
++#define SIGUSR2 12
++#endif
++
+ 
+ /* Believe it or not, but some arches have more than 32 SIGs!
+  * HPPA: SIGSTKFLT == 36. */

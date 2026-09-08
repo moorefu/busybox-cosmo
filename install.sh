@@ -30,13 +30,27 @@ WINONLY=0
 UNINSTALL=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --prefix) PREFIX="$2"; shift 2 ;;
+    --prefix)
+      [ $# -ge 2 ] || { echo "--prefix 需要目录参数" >&2; exit 2; }
+      [ -n "$2" ] || { echo "--prefix 不能为空" >&2; exit 2; }
+      PREFIX="$2"; shift 2 ;;
     --linux-binfmt) BINFMT=1; shift ;;
     --win-only) WINONLY=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     *) echo "未知参数: $1 (见头部用法)" >&2; exit 1 ;;
   esac
 done
+
+# PREFIX 会写入可执行 launcher 与逐行卸载清单。拒绝会破坏 Shell 字面量或
+# 清单边界的字符；Windows 的 Git Bash/MSYS 请使用 /c/... 形式路径。
+prefix_lf='
+'
+prefix_cr=$(printf '\r')
+case "$PREFIX" in
+  *'"'*|*'\'*|*'$'*|*'`'*|*"$prefix_lf"*|*"$prefix_cr"*)
+    echo "--prefix 含不安全字符（双引号、反斜杠、美元符、反引号或换行）" >&2
+    exit 2 ;;
+esac
 
 # ---------- 平台/架构探测 ----------
 OS="$(uname -s 2>/dev/null | tr A-Z a-z)"
@@ -54,6 +68,8 @@ case "$MACH" in
 esac
 
 echo "平台: $PLAT / $ARCH    安装根: $PREFIX"
+MANIFEST="$PREFIX/.busybox-cosmo-manifest"
+[ ! -L "$MANIFEST" ] || { echo "拒绝使用符号链接安装清单: $MANIFEST" >&2; exit 2; }
 
 # ---------- 待安装资产探测 (兼容: release 同目录 / 工程内 dist 布局) ----------
 find_asset() { # $1=名 输出路径; 找不到返回 1
@@ -83,8 +99,41 @@ case "$PLAT-$ARCH" in
 esac
 
 [ "$UNINSTALL" = 1 ] && {
-  rm -rf "$PREFIX"
-  echo "已卸载: $PREFIX"
+  case "$PREFIX" in
+    ""|/|.) echo "拒绝卸载危险目录: $PREFIX" >&2; exit 2 ;;
+    "$HOME") echo "拒绝卸载 HOME 根目录，请指定实际安装目录" >&2; exit 2 ;;
+  esac
+  [ -f "$MANIFEST" ] || {
+    echo "未找到本项目安装清单，拒绝递归删除: $MANIFEST" >&2
+    exit 1
+  }
+  for manifest_dir in "$PREFIX" "$PREFIX/bin" "$PREFIX/libexec" "$PREFIX/loaders" "$PREFIX/tools"; do
+    [ ! -L "$manifest_dir" ] || { echo "拒绝卸载符号链接目录: $manifest_dir" >&2; exit 2; }
+  done
+  manifest_target_allowed() {
+    case "$1" in
+      "$PREFIX/busybox.exe"|"$PREFIX/busybox-arm64-linux-elf"|\
+      "$PREFIX/libexec/busybox"|"$PREFIX/bin/busybox"|"$PREFIX/bin/busybox.com"|\
+      "$PREFIX/tools/assimilate") return 0 ;;
+      "$PREFIX/loaders/"*)
+        manifest_leaf=${1#"$PREFIX/loaders/"}
+        case "$manifest_leaf" in ""|*/*|*[!A-Za-z0-9._-]*) return 1 ;; esac
+        return 0 ;;
+    esac
+    return 1
+  }
+  while IFS= read -r target; do
+    [ -z "$target" ] || manifest_target_allowed "$target" || {
+      echo "安装清单含越界目标，拒绝卸载: $target" >&2
+      exit 2
+    }
+  done < "$MANIFEST"
+  while IFS= read -r target; do
+    [ -n "$target" ] && rm -f -- "$target"
+  done < "$MANIFEST"
+  rm -f -- "$MANIFEST"
+  rmdir "$PREFIX/bin" "$PREFIX/libexec" "$PREFIX/loaders" "$PREFIX/tools" "$PREFIX" 2>/dev/null || true
+  echo "已卸载清单中的文件: $PREFIX"
   exit 0
 }
 
@@ -96,7 +145,14 @@ if [ "$PLAT" = windows ]; then
   for l in ape-loader-x86_64 ape-loader-aarch64 ape-loader-macos-x86_64 ape-loader-macos-arm64 ape-m1-loader-src.c; do
     L="$(find_asset "$l")" && { mkdir -p "$PREFIX/loaders"; cp -f "$L" "$PREFIX/loaders/"; }
   done
-  cp -f "$(find_asset busybox-arm64-linux-elf 2>/dev/null || echo /dev/null)" "$PREFIX/busybox-arm64-linux-elf" 2>/dev/null || true
+  if ELF64_ASSET="$(find_asset busybox-arm64-linux-elf 2>/dev/null)"; then
+    cp -f "$ELF64_ASSET" "$PREFIX/busybox-arm64-linux-elf"
+  fi
+  {
+    printf '%s\n' "$PREFIX/busybox.exe"
+    for f in "$PREFIX/loaders"/*; do [ -f "$f" ] && printf '%s\n' "$f"; done
+    [ -f "$PREFIX/busybox-arm64-linux-elf" ] && printf '%s\n' "$PREFIX/busybox-arm64-linux-elf"
+  } > "$MANIFEST"
   echo ""
   echo "Windows 就绪: $PREFIX/busybox.exe  (PE 原生加载, 无自修改)"
   echo "把 busybox.exe 复制/改名到 PATH 中名为 busybox.exe 即可(须含 busybox 才能用子命令模式)。"
@@ -181,6 +237,13 @@ chmod 755 "$BIN/busybox"
 
 # 便捷 applet 名 (母本亦名 busybox, 子命令模式可用)
 ln -sfn busybox "$BIN/busybox.com" 2>/dev/null || cp -f "$LIBEXEC/busybox" "$BIN/busybox.com"
+
+# 卸载只依据这份清单逐个删除，不递归清空安装根目录。
+{
+  printf '%s\n' "$LIBEXEC/busybox" "$BIN/busybox" "$BIN/busybox.com"
+  [ -f "$PREFIX/tools/assimilate" ] && printf '%s\n' "$PREFIX/tools/assimilate"
+  for f in "$PREFIX/loaders"/*; do [ -f "$f" ] && printf '%s\n' "$f"; done
+} > "$MANIFEST"
 
 echo ""
 echo "=== 安装完成 ==="

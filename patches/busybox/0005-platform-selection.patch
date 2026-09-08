@@ -1,0 +1,502 @@
+diff --git a/e2fsprogs/tune2fs.c b/e2fsprogs/tune2fs.c
+--- a/e2fsprogs/tune2fs.c
++++ b/e2fsprogs/tune2fs.c
+@@ -17,7 +17,7 @@
+ 
+ //TODO alias to "tune2fs -L LABEL": //applet:IF_E2LABEL(APPLET_ODDNAME(e2label, tune2fs, BB_DIR_SBIN, BB_SUID_DROP, e2label))
+ 
+-//kbuild:lib-$(CONFIG_TUNE2FS) += tune2fs.o
++//xxkbuild:lib-$(CONFIG_TUNE2FS) += tune2fs.o
+ 
+ //usage:#define tune2fs_trivial_usage
+ //usage:       "[-c MAX_MOUNT_COUNT] "
+diff --git a/miscutils/fbsplash.c b/miscutils/fbsplash.c
+--- a/miscutils/fbsplash.c
++++ b/miscutils/fbsplash.c
+@@ -43,7 +43,7 @@
+ 
+ //applet:IF_FBSPLASH(APPLET(fbsplash, BB_DIR_SBIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_FBSPLASH) += fbsplash.o
++//xxkbuild:lib-$(CONFIG_FBSPLASH) += fbsplash.o
+ 
+ //usage:#define fbsplash_trivial_usage
+ //usage:       "-s IMGFILE [-c] [-d DEV] [-i INIFILE] [-f CMD]"
+diff --git a/miscutils/flash_eraseall.c b/miscutils/flash_eraseall.c
+--- a/miscutils/flash_eraseall.c
++++ b/miscutils/flash_eraseall.c
+@@ -20,7 +20,7 @@
+ //applet:IF_FLASH_ERASEALL(APPLET(flash_eraseall, BB_DIR_USR_SBIN, BB_SUID_DROP))
+ /* not NOEXEC: if flash operation stalls, use less memory in "hung" process */
+ 
+-//kbuild:lib-$(CONFIG_FLASH_ERASEALL) += flash_eraseall.o
++//xxkbuild:lib-$(CONFIG_FLASH_ERASEALL) += flash_eraseall.o
+ 
+ //usage:#define flash_eraseall_trivial_usage
+ //usage:       "[-jNq] MTD_DEVICE"
+diff --git a/miscutils/flash_lock_unlock.c b/miscutils/flash_lock_unlock.c
+--- a/miscutils/flash_lock_unlock.c
++++ b/miscutils/flash_lock_unlock.c
+@@ -23,8 +23,8 @@
+ //applet:IF_FLASH_UNLOCK(APPLET_ODDNAME(flash_unlock, flash_lock_unlock, BB_DIR_USR_SBIN, BB_SUID_DROP, flash_unlock))
+ /* not NOEXEC: if flash operation stalls, use less memory in "hung" process */
+ 
+-//kbuild:lib-$(CONFIG_FLASH_LOCK) += flash_lock_unlock.o
+-//kbuild:lib-$(CONFIG_FLASH_UNLOCK) += flash_lock_unlock.o
++//xxkbuild:lib-$(CONFIG_FLASH_LOCK) += flash_lock_unlock.o
++//xxkbuild:lib-$(CONFIG_FLASH_UNLOCK) += flash_lock_unlock.o
+ 
+ //usage:#define flash_lock_trivial_usage
+ //usage:       "MTD_DEVICE OFFSET SECTORS"
+diff --git a/miscutils/flashcp.c b/miscutils/flashcp.c
+--- a/miscutils/flashcp.c
++++ b/miscutils/flashcp.c
+@@ -16,7 +16,7 @@
+ //applet:IF_FLASHCP(APPLET(flashcp, BB_DIR_USR_SBIN, BB_SUID_DROP))
+ /* not NOEXEC: if flash operation stalls, use less memory in "hung" process */
+ 
+-//kbuild:lib-$(CONFIG_FLASHCP) += flashcp.o
++//xxkbuild:lib-$(CONFIG_FLASHCP) += flashcp.o
+ 
+ //usage:#define flashcp_trivial_usage
+ //usage:       "[-v] FILE MTD_DEVICE"
+diff --git a/miscutils/hdparm.c b/miscutils/hdparm.c
+--- a/miscutils/hdparm.c
++++ b/miscutils/hdparm.c
+@@ -70,7 +70,7 @@
+ 
+ //applet:IF_HDPARM(APPLET(hdparm, BB_DIR_SBIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_HDPARM) += hdparm.o
++//xxkbuild:lib-$(CONFIG_HDPARM) += hdparm.o
+ 
+ //usage:#define hdparm_trivial_usage
+ //usage:       "[OPTIONS] [DEVICE]"
+diff --git a/miscutils/i2c_tools.c b/miscutils/i2c_tools.c
+--- a/miscutils/i2c_tools.c
++++ b/miscutils/i2c_tools.c
+@@ -46,11 +46,11 @@
+ //applet:IF_I2CTRANSFER(APPLET(i2ctransfer, BB_DIR_USR_SBIN, BB_SUID_DROP))
+ /* not NOEXEC: if hw operation stalls, use less memory in "hung" process */
+ 
+-//kbuild:lib-$(CONFIG_I2CGET) += i2c_tools.o
+-//kbuild:lib-$(CONFIG_I2CSET) += i2c_tools.o
+-//kbuild:lib-$(CONFIG_I2CDUMP) += i2c_tools.o
+-//kbuild:lib-$(CONFIG_I2CDETECT) += i2c_tools.o
+-//kbuild:lib-$(CONFIG_I2CTRANSFER) += i2c_tools.o
++//xxkbuild:lib-$(CONFIG_I2CGET) += i2c_tools.o
++//xxkbuild:lib-$(CONFIG_I2CSET) += i2c_tools.o
++//xxkbuild:lib-$(CONFIG_I2CDUMP) += i2c_tools.o
++//xxkbuild:lib-$(CONFIG_I2CDETECT) += i2c_tools.o
++//xxkbuild:lib-$(CONFIG_I2CTRANSFER) += i2c_tools.o
+ 
+ /*
+  * Unsupported stuff:
+diff --git a/miscutils/mt.c b/miscutils/mt.c
+--- a/miscutils/mt.c
++++ b/miscutils/mt.c
+@@ -12,7 +12,7 @@
+ 
+ //applet:IF_MT(APPLET(mt, BB_DIR_BIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_MT) += mt.o
++//xxkbuild:lib-$(CONFIG_MT) += mt.o
+ 
+ //usage:#define mt_trivial_usage
+ //usage:       "[-f DEVICE] OPCODE VALUE"
+diff --git a/miscutils/nandwrite.c b/miscutils/nandwrite.c
+--- a/miscutils/nandwrite.c
++++ b/miscutils/nandwrite.c
+@@ -22,8 +22,8 @@
+ //applet:IF_NANDWRITE(APPLET(nandwrite, BB_DIR_USR_SBIN, BB_SUID_DROP))
+ //applet:IF_NANDDUMP(APPLET_ODDNAME(nanddump, nandwrite, BB_DIR_USR_SBIN, BB_SUID_DROP, nanddump))
+ 
+-//kbuild:lib-$(CONFIG_NANDWRITE) += nandwrite.o
+-//kbuild:lib-$(CONFIG_NANDDUMP) += nandwrite.o
++//xxkbuild:lib-$(CONFIG_NANDWRITE) += nandwrite.o
++//xxkbuild:lib-$(CONFIG_NANDDUMP) += nandwrite.o
+ 
+ //usage:#define nandwrite_trivial_usage
+ //usage:	"[-np] [-s ADDR] MTD_DEVICE [FILE]"
+diff --git a/miscutils/partprobe.c b/miscutils/partprobe.c
+--- a/miscutils/partprobe.c
++++ b/miscutils/partprobe.c
+@@ -12,7 +12,7 @@
+ 
+ //applet:IF_PARTPROBE(APPLET_NOEXEC(partprobe, partprobe, BB_DIR_USR_SBIN, BB_SUID_DROP, partprobe))
+ 
+-//kbuild:lib-$(CONFIG_PARTPROBE) += partprobe.o
++//xxkbuild:lib-$(CONFIG_PARTPROBE) += partprobe.o
+ 
+ #include <linux/fs.h>
+ #include "libbb.h"
+diff --git a/miscutils/raidautorun.c b/miscutils/raidautorun.c
+--- a/miscutils/raidautorun.c
++++ b/miscutils/raidautorun.c
+@@ -15,7 +15,7 @@
+ 
+ //applet:IF_RAIDAUTORUN(APPLET_NOEXEC(raidautorun, raidautorun, BB_DIR_SBIN, BB_SUID_DROP, raidautorun))
+ 
+-//kbuild:lib-$(CONFIG_RAIDAUTORUN) += raidautorun.o
++//xxkbuild:lib-$(CONFIG_RAIDAUTORUN) += raidautorun.o
+ 
+ //usage:#define raidautorun_trivial_usage
+ //usage:       "DEVICE"
+diff --git a/miscutils/readahead.c b/miscutils/readahead.c
+--- a/miscutils/readahead.c
++++ b/miscutils/readahead.c
+@@ -28,7 +28,7 @@
+ 
+ //applet:IF_READAHEAD(APPLET(readahead, BB_DIR_USR_SBIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_READAHEAD) += readahead.o
++//xxkbuild:lib-$(CONFIG_READAHEAD) += readahead.o
+ 
+ //usage:#define readahead_trivial_usage
+ //usage:       "[FILE]..."
+diff --git a/miscutils/rfkill.c b/miscutils/rfkill.c
+--- a/miscutils/rfkill.c
++++ b/miscutils/rfkill.c
+@@ -20,7 +20,7 @@
+ 
+ //applet:IF_RFKILL(APPLET(rfkill, BB_DIR_USR_SBIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_RFKILL) += rfkill.o
++//xxkbuild:lib-$(CONFIG_RFKILL) += rfkill.o
+ 
+ //usage:#define rfkill_trivial_usage
+ //usage:       "COMMAND [INDEX|TYPE]"
+diff --git a/miscutils/seedrng.c b/miscutils/seedrng.c
+--- a/miscutils/seedrng.c
++++ b/miscutils/seedrng.c
+@@ -29,7 +29,7 @@
+ 
+ //applet:IF_SEEDRNG(APPLET(seedrng, BB_DIR_USR_SBIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_SEEDRNG) += seedrng.o
++//xxkbuild:lib-$(CONFIG_SEEDRNG) += seedrng.o
+ 
+ //usage:#define seedrng_trivial_usage
+ //usage:	"[-d DIR] [-n]"
+diff --git a/miscutils/setserial.c b/miscutils/setserial.c
+--- a/miscutils/setserial.c
++++ b/miscutils/setserial.c
+@@ -15,7 +15,7 @@
+ 
+ //applet:IF_SETSERIAL(APPLET_NOEXEC(setserial, setserial, BB_DIR_BIN, BB_SUID_DROP, setserial))
+ 
+-//kbuild:lib-$(CONFIG_SETSERIAL) += setserial.o
++//xxkbuild:lib-$(CONFIG_SETSERIAL) += setserial.o
+ 
+ #include "libbb.h"
+ #include <assert.h>
+diff --git a/miscutils/ubi_tools.c b/miscutils/ubi_tools.c
+--- a/miscutils/ubi_tools.c
++++ b/miscutils/ubi_tools.c
+@@ -48,12 +48,12 @@
+ //applet:IF_UBIUPDATEVOL(APPLET_ODDNAME(ubiupdatevol, ubi_tools, BB_DIR_USR_SBIN, BB_SUID_DROP, ubiupdatevol))
+ /* not NOEXEC: if flash operation stalls, use less memory in "hung" process */
+ 
+-//kbuild:lib-$(CONFIG_UBIATTACH) += ubi_tools.o
+-//kbuild:lib-$(CONFIG_UBIDETACH) += ubi_tools.o
+-//kbuild:lib-$(CONFIG_UBIMKVOL)  += ubi_tools.o
+-//kbuild:lib-$(CONFIG_UBIRMVOL)  += ubi_tools.o
+-//kbuild:lib-$(CONFIG_UBIRSVOL)  += ubi_tools.o
+-//kbuild:lib-$(CONFIG_UBIUPDATEVOL) += ubi_tools.o
++//xxkbuild:lib-$(CONFIG_UBIATTACH) += ubi_tools.o
++//xxkbuild:lib-$(CONFIG_UBIDETACH) += ubi_tools.o
++//xxkbuild:lib-$(CONFIG_UBIMKVOL)  += ubi_tools.o
++//xxkbuild:lib-$(CONFIG_UBIRMVOL)  += ubi_tools.o
++//xxkbuild:lib-$(CONFIG_UBIRSVOL)  += ubi_tools.o
++//xxkbuild:lib-$(CONFIG_UBIUPDATEVOL) += ubi_tools.o
+ 
+ #include "libbb.h"
+ /* Some versions of kernel have broken headers, need this hack */
+diff --git a/miscutils/ubirename.c b/miscutils/ubirename.c
+--- a/miscutils/ubirename.c
++++ b/miscutils/ubirename.c
+@@ -15,7 +15,7 @@
+ //applet:IF_UBIRENAME(APPLET(ubirename, BB_DIR_USR_SBIN, BB_SUID_DROP))
+ /* not NOEXEC: if flash operation stalls, use less memory in "hung" process */
+ 
+-//kbuild:lib-$(CONFIG_UBIRENAME) += ubirename.o
++//xxkbuild:lib-$(CONFIG_UBIRENAME) += ubirename.o
+ 
+ //usage:#define ubirename_trivial_usage
+ //usage:	"UBI_DEVICE OLD_VOLNAME NEW_VOLNAME [OLD2 NEW2]..."
+diff --git a/util-linux/acpid.c b/util-linux/acpid.c
+--- a/util-linux/acpid.c
++++ b/util-linux/acpid.c
+@@ -30,7 +30,7 @@
+ 
+ //applet:IF_ACPID(APPLET(acpid, BB_DIR_SBIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_ACPID) += acpid.o
++//xxkbuild:lib-$(CONFIG_ACPID) += acpid.o
+ 
+ //usage:#define acpid_trivial_usage
+ //usage:       "[-df] [-c CONFDIR] [-l LOGFILE] [-a ACTIONFILE] [-M MAPFILE] [-e PROC_EVENT_FILE] [-p PIDFILE]"
+diff --git a/util-linux/blkdiscard.c b/util-linux/blkdiscard.c
+--- a/util-linux/blkdiscard.c
++++ b/util-linux/blkdiscard.c
+@@ -13,7 +13,7 @@
+ 
+ //applet:IF_BLKDISCARD(APPLET_NOEXEC(blkdiscard, blkdiscard, BB_DIR_USR_BIN, BB_SUID_DROP, blkdiscard))
+ 
+-//kbuild:lib-$(CONFIG_BLKDISCARD) += blkdiscard.o
++//xxkbuild:lib-$(CONFIG_BLKDISCARD) += blkdiscard.o
+ 
+ //usage:#define blkdiscard_trivial_usage
+ //usage:       "[-o OFS] [-l LEN] [-s] DEVICE"
+diff --git a/util-linux/blockdev.c b/util-linux/blockdev.c
+--- a/util-linux/blockdev.c
++++ b/util-linux/blockdev.c
+@@ -13,7 +13,7 @@
+ 
+ //applet:IF_BLOCKDEV(APPLET_NOEXEC(blockdev, blockdev, BB_DIR_SBIN, BB_SUID_DROP, blockdev))
+ 
+-//kbuild:lib-$(CONFIG_BLOCKDEV) += blockdev.o
++//xxkbuild:lib-$(CONFIG_BLOCKDEV) += blockdev.o
+ 
+ //usage:#define blockdev_trivial_usage
+ //usage:	"OPTION BLOCKDEV"
+diff --git a/util-linux/dmesg.c b/util-linux/dmesg.c
+--- a/util-linux/dmesg.c
++++ b/util-linux/dmesg.c
+@@ -43,7 +43,7 @@
+ 
+ //applet:IF_DMESG(APPLET(dmesg, BB_DIR_BIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_DMESG) += dmesg.o
++//xxkbuild:lib-$(CONFIG_DMESG) += dmesg.o
+ 
+ //usage:#define dmesg_trivial_usage
+ //usage:       "[-cr] [-n LEVEL] [-s SIZE]"
+diff --git a/util-linux/eject.c b/util-linux/eject.c
+--- a/util-linux/eject.c
++++ b/util-linux/eject.c
+@@ -28,7 +28,7 @@
+ 
+ //applet:IF_EJECT(APPLET(eject, BB_DIR_USR_BIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_EJECT) += eject.o
++//xxkbuild:lib-$(CONFIG_EJECT) += eject.o
+ 
+ //usage:#define eject_trivial_usage
+ //usage:       IF_FEATURE_EJECT_SCSI("[-s] ") "[-t] [-T] [DEVICE]"
+diff --git a/util-linux/fallocate.c b/util-linux/fallocate.c
+--- a/util-linux/fallocate.c
++++ b/util-linux/fallocate.c
+@@ -12,7 +12,7 @@
+ 
+ //applet:IF_FALLOCATE(APPLET(fallocate, BB_DIR_USR_BIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_FALLOCATE) += fallocate.o
++//xxkbuild:lib-$(CONFIG_FALLOCATE) += fallocate.o
+ 
+ //usage:#define fallocate_trivial_usage
+ //usage:       "[-o OFS] -l LEN FILE"
+diff --git a/util-linux/fdisk.c b/util-linux/fdisk.c
+--- a/util-linux/fdisk.c
++++ b/util-linux/fdisk.c
+@@ -89,7 +89,7 @@
+ 
+ //applet:IF_FDISK(APPLET(fdisk, BB_DIR_SBIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_FDISK) += fdisk.o
++//xxkbuild:lib-$(CONFIG_FDISK) += fdisk.o
+ 
+ //usage:#define fdisk_trivial_usage
+ //usage:       "[-ul" IF_FEATURE_FDISK_BLKSIZE("s") "] "
+diff --git a/util-linux/freeramdisk.c b/util-linux/freeramdisk.c
+--- a/util-linux/freeramdisk.c
++++ b/util-linux/freeramdisk.c
+@@ -35,8 +35,8 @@
+ //applet:IF_FDFLUSH(   APPLET_ODDNAME(fdflush,     freeramdisk, BB_DIR_BIN,  BB_SUID_DROP, fdflush    ))
+ //applet:IF_FREERAMDISK(APPLET_NOEXEC(freeramdisk, freeramdisk, BB_DIR_SBIN, BB_SUID_DROP, freeramdisk))
+ 
+-//kbuild:lib-$(CONFIG_FDFLUSH) += freeramdisk.o
+-//kbuild:lib-$(CONFIG_FREERAMDISK) += freeramdisk.o
++//xxkbuild:lib-$(CONFIG_FDFLUSH) += freeramdisk.o
++//xxkbuild:lib-$(CONFIG_FREERAMDISK) += freeramdisk.o
+ 
+ //usage:#define freeramdisk_trivial_usage
+ //usage:       "DEVICE"
+diff --git a/util-linux/fsfreeze.c b/util-linux/fsfreeze.c
+--- a/util-linux/fsfreeze.c
++++ b/util-linux/fsfreeze.c
+@@ -13,7 +13,7 @@
+ 
+ //applet:IF_FSFREEZE(APPLET_NOEXEC(fsfreeze, fsfreeze, BB_DIR_USR_SBIN, BB_SUID_DROP, fsfreeze))
+ 
+-//kbuild:lib-$(CONFIG_FSFREEZE) += fsfreeze.o
++//xxkbuild:lib-$(CONFIG_FSFREEZE) += fsfreeze.o
+ 
+ //usage:#define fsfreeze_trivial_usage
+ //usage:       "--[un]freeze MOUNTPOINT"
+diff --git a/util-linux/fstrim.c b/util-linux/fstrim.c
+--- a/util-linux/fstrim.c
++++ b/util-linux/fstrim.c
+@@ -15,7 +15,7 @@
+ 
+ //applet:IF_FSTRIM(APPLET_NOEXEC(fstrim, fstrim, BB_DIR_SBIN, BB_SUID_DROP, fstrim))
+ 
+-//kbuild:lib-$(CONFIG_FSTRIM) += fstrim.o
++//xxkbuild:lib-$(CONFIG_FSTRIM) += fstrim.o
+ 
+ //usage:#define fstrim_trivial_usage
+ //usage:       "[OPTIONS] MOUNTPOINT"
+diff --git a/util-linux/ionice.c b/util-linux/ionice.c
+--- a/util-linux/ionice.c
++++ b/util-linux/ionice.c
+@@ -15,7 +15,7 @@
+ 
+ //applet:IF_IONICE(APPLET_NOEXEC(ionice, ionice, BB_DIR_BIN, BB_SUID_DROP, ionice))
+ 
+-//kbuild:lib-$(CONFIG_IONICE) += ionice.o
++//xxkbuild:lib-$(CONFIG_IONICE) += ionice.o
+ 
+ //usage:#define ionice_trivial_usage
+ //usage:	"[-c 1-3] [-n 0-7] [-t] { -p PID | PROG ARGS }"
+diff --git a/util-linux/ipcrm.c b/util-linux/ipcrm.c
+--- a/util-linux/ipcrm.c
++++ b/util-linux/ipcrm.c
+@@ -17,7 +17,7 @@
+ 
+ //applet:IF_IPCRM(APPLET_NOEXEC(ipcrm, ipcrm, BB_DIR_USR_BIN, BB_SUID_DROP, ipcrm))
+ 
+-//kbuild:lib-$(CONFIG_IPCRM) += ipcrm.o
++//xxkbuild:lib-$(CONFIG_IPCRM) += ipcrm.o
+ 
+ #include "libbb.h"
+ 
+diff --git a/util-linux/ipcs.c b/util-linux/ipcs.c
+--- a/util-linux/ipcs.c
++++ b/util-linux/ipcs.c
+@@ -16,7 +16,7 @@
+ 
+ //applet:IF_IPCS(APPLET_NOEXEC(ipcs, ipcs, BB_DIR_USR_BIN, BB_SUID_DROP, ipcs))
+ 
+-//kbuild:lib-$(CONFIG_IPCS) += ipcs.o
++//xxkbuild:lib-$(CONFIG_IPCS) += ipcs.o
+ 
+ /* X/OPEN tells us to use <sys/{types,ipc,sem}.h> for semctl() */
+ /* X/OPEN tells us to use <sys/{types,ipc,msg}.h> for msgctl() */
+diff --git a/util-linux/mkfs_ext2.c b/util-linux/mkfs_ext2.c
+--- a/util-linux/mkfs_ext2.c
++++ b/util-linux/mkfs_ext2.c
+@@ -24,8 +24,8 @@
+ //applet:IF_MKFS_EXT2(APPLET_ODDNAME(mkfs.ext2, mkfs_ext2, BB_DIR_SBIN, BB_SUID_DROP, mkfs_ext2))
+ ////////:IF_MKFS_EXT3(APPLET_ODDNAME(mkfs.ext3, mkfs_ext2, BB_DIR_SBIN, BB_SUID_DROP, mkfs_ext2))
+ 
+-//kbuild:lib-$(CONFIG_MKE2FS) += mkfs_ext2.o
+-//kbuild:lib-$(CONFIG_MKFS_EXT2) += mkfs_ext2.o
++//xxkbuild:lib-$(CONFIG_MKE2FS) += mkfs_ext2.o
++//xxkbuild:lib-$(CONFIG_MKFS_EXT2) += mkfs_ext2.o
+ 
+ //usage:#define mkfs_ext2_trivial_usage
+ //usage:       "[-Fn] "
+diff --git a/util-linux/mkfs_reiser.c b/util-linux/mkfs_reiser.c
+--- a/util-linux/mkfs_reiser.c
++++ b/util-linux/mkfs_reiser.c
+@@ -15,7 +15,7 @@
+ 
+ //applet:IF_MKFS_REISER(APPLET_ODDNAME(mkfs.reiser, mkfs_reiser, BB_DIR_SBIN, BB_SUID_DROP, mkfs_reiser))
+ 
+-//kbuild:lib-$(CONFIG_MKFS_REISER) += mkfs_reiser.o
++//xxkbuild:lib-$(CONFIG_MKFS_REISER) += mkfs_reiser.o
+ 
+ //usage:#define mkfs_reiser_trivial_usage
+ //usage:       "[-f] [-l LABEL] BLOCKDEV [4K-BLOCKS]"
+diff --git a/util-linux/mkfs_vfat.c b/util-linux/mkfs_vfat.c
+--- a/util-linux/mkfs_vfat.c
++++ b/util-linux/mkfs_vfat.c
+@@ -23,8 +23,8 @@
+ //applet:IF_MKDOSFS(  APPLET_ODDNAME(mkdosfs,   mkfs_vfat, BB_DIR_SBIN, BB_SUID_DROP, mkfs_vfat))
+ //applet:IF_MKFS_VFAT(APPLET_ODDNAME(mkfs.vfat, mkfs_vfat, BB_DIR_SBIN, BB_SUID_DROP, mkfs_vfat))
+ 
+-//kbuild:lib-$(CONFIG_MKDOSFS) += mkfs_vfat.o
+-//kbuild:lib-$(CONFIG_MKFS_VFAT) += mkfs_vfat.o
++//xxkbuild:lib-$(CONFIG_MKDOSFS) += mkfs_vfat.o
++//xxkbuild:lib-$(CONFIG_MKFS_VFAT) += mkfs_vfat.o
+ 
+ //usage:#define mkfs_vfat_trivial_usage
+ //usage:       "[-v] [-n LABEL] BLOCKDEV [KBYTES]"
+diff --git a/util-linux/nsenter.c b/util-linux/nsenter.c
+--- a/util-linux/nsenter.c
++++ b/util-linux/nsenter.c
+@@ -14,7 +14,7 @@
+ 
+ //applet:IF_NSENTER(APPLET(nsenter, BB_DIR_USR_BIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_NSENTER) += nsenter.o
++//xxkbuild:lib-$(CONFIG_NSENTER) += nsenter.o
+ 
+ //usage:#define nsenter_trivial_usage
+ //usage:       "[OPTIONS] [PROG ARGS]"
+diff --git a/util-linux/setarch.c b/util-linux/setarch.c
+--- a/util-linux/setarch.c
++++ b/util-linux/setarch.c
+@@ -32,9 +32,9 @@
+ //applet:IF_LINUX32(APPLET_NOEXEC(linux32, setarch, BB_DIR_BIN, BB_SUID_DROP, linux32))
+ //applet:IF_LINUX64(APPLET_NOEXEC(linux64, setarch, BB_DIR_BIN, BB_SUID_DROP, linux64))
+ 
+-//kbuild:lib-$(CONFIG_SETARCH) += setarch.o
+-//kbuild:lib-$(CONFIG_LINUX32) += setarch.o
+-//kbuild:lib-$(CONFIG_LINUX64) += setarch.o
++//xxkbuild:lib-$(CONFIG_SETARCH) += setarch.o
++//xxkbuild:lib-$(CONFIG_LINUX32) += setarch.o
++//xxkbuild:lib-$(CONFIG_LINUX64) += setarch.o
+ 
+ //usage:#define setarch_trivial_usage
+ //usage:       "PERSONALITY [-R] PROG ARGS"
+diff --git a/util-linux/setpriv.c b/util-linux/setpriv.c
+--- a/util-linux/setpriv.c
++++ b/util-linux/setpriv.c
+@@ -44,7 +44,7 @@
+ 
+ //applet:IF_SETPRIV(APPLET(setpriv, BB_DIR_BIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_SETPRIV) += setpriv.o
++//xxkbuild:lib-$(CONFIG_SETPRIV) += setpriv.o
+ 
+ //usage:#define setpriv_trivial_usage
+ //usage:	"[OPTIONS] PROG ARGS"
+diff --git a/util-linux/swaponoff.c b/util-linux/swaponoff.c
+--- a/util-linux/swaponoff.c
++++ b/util-linux/swaponoff.c
+@@ -49,8 +49,8 @@
+ //applet:IF_SWAPON( APPLET_ODDNAME(swapon,  swap_on_off, BB_DIR_SBIN, BB_SUID_DROP, swapon))
+ //applet:IF_SWAPOFF(APPLET_ODDNAME(swapoff, swap_on_off, BB_DIR_SBIN, BB_SUID_DROP, swapoff))
+ 
+-//kbuild:lib-$(CONFIG_SWAPON) += swaponoff.o
+-//kbuild:lib-$(CONFIG_SWAPOFF) += swaponoff.o
++//xxkbuild:lib-$(CONFIG_SWAPON) += swaponoff.o
++//xxkbuild:lib-$(CONFIG_SWAPOFF) += swaponoff.o
+ 
+ //usage:#define swapon_trivial_usage
+ //usage:       "[-a] [-e]" IF_FEATURE_SWAPON_DISCARD(" [-d[POL]]") IF_FEATURE_SWAPON_PRI(" [-p PRI]") " [DEVICE]"
+diff --git a/util-linux/umount.c b/util-linux/umount.c
+--- a/util-linux/umount.c
++++ b/util-linux/umount.c
+@@ -38,7 +38,7 @@
+  * bb_common_bufsiz1 usage here is safe wrt NOEXEC: not expecting it to be zeroed.
+  */
+ 
+-//kbuild:lib-$(CONFIG_UMOUNT) += umount.o
++//xxkbuild:lib-$(CONFIG_UMOUNT) += umount.o
+ 
+ //usage:#define umount_trivial_usage
+ //usage:       "[-rlf"IF_FEATURE_MTAB_SUPPORT("m")IF_FEATURE_MOUNT_LOOP("d")IF_FEATURE_UMOUNT_ALL("a")"] [-t FSTYPE] FILESYSTEM|DIRECTORY"
+diff --git a/util-linux/unshare.c b/util-linux/unshare.c
+--- a/util-linux/unshare.c
++++ b/util-linux/unshare.c
+@@ -20,7 +20,7 @@
+ 
+ //applet:IF_UNSHARE(APPLET(unshare, BB_DIR_USR_BIN, BB_SUID_DROP))
+ 
+-//kbuild:lib-$(CONFIG_UNSHARE) += unshare.o
++//xxkbuild:lib-$(CONFIG_UNSHARE) += unshare.o
+ 
+ //usage:#define unshare_trivial_usage
+ //usage:       "[OPTIONS] [PROG ARGS]"

@@ -2,16 +2,19 @@
 # busybox-cosmo: cosmopolitan master 定制补丁 (权威版, 2026-09-03)
 #   基座: jart/cosmopolitan @ 3293fad0a9eac7865c019be98fb993eeb933405e
 #   应用: 在 cosmopolitan master 源码树根执行  patch -p1 < 本文件
-#   内容(17 文件):
-#     1. /dev/zero Windows 虚拟       libc/... (kFdDevZero=11, 13 文件)
+#   内容(20 文件):
+#     1. /dev/zero Windows 虚拟       libc/... (kFdDevZero=11, 16 文件)
 #     2. mac 自身路径根治             libc/calls/getprogramexecutablename.greg.c
 #     3. QuickEdit 鼠标保留           libc/calls/tcsetattr-nt.c
 #     4. 64K 页支持(链接/嵌入)        ape/BUILD.mk + tool/build/apelink.c
-#   与 patches/cosmo/master-snapshot/ 等价 (该目录为成品文件覆盖形态)
+#   应用顺序以 patches/cosmo/series 为准，不再维护成品文件覆盖快照
 # ============================================================
+
+diff --git a/ape/BUILD.mk b/ape/BUILD.mk
+index 89a1cac0..2c56c15b 100644
 --- a/ape/BUILD.mk
 +++ b/ape/BUILD.mk
-@@ -60,7 +60,7 @@
+@@ -60,7 +60,7 @@ APE_LOADER_LDFLAGS =				\
  	--no-dynamic-linker			\
  	-z norelro				\
  	-z common-page-size=0x4000		\
@@ -20,9 +23,23 @@
  
  APE_LOADER_FLAGS =				\
  	-DNDEBUG				\
+diff --git a/libc/calls/close.c b/libc/calls/close.c
+index 24497977..edcd35f2 100644
+--- a/libc/calls/close.c
++++ b/libc/calls/close.c
+@@ -76,6 +76,7 @@ static int close_impl(int fd) {
+ #endif
+ #if SupportsWindows()
+     case kFdDevRandom:
++    case kFdDevZero:
+       break;
+     case kFdFile:
+       if (!__vforked)
+diff --git a/libc/calls/fstat-nt.c b/libc/calls/fstat-nt.c
+index 5e1bfecb..de6836a9 100644
 --- a/libc/calls/fstat-nt.c
 +++ b/libc/calls/fstat-nt.c
-@@ -63,6 +63,7 @@
+@@ -63,6 +63,7 @@ textwindows int sys_fstat_nt(int fd, struct stat *st) {
      case kFdConsole:
      case kFdDevNull:
      case kFdDevRandom:
@@ -30,9 +47,11 @@
        return sys_fstat_nt_char(__get_pib()->fds.p[fd].kind, st);
      case kFdSocket:
        bzero(st, sizeof(*st));
+diff --git a/libc/calls/fstatat-nt.c b/libc/calls/fstatat-nt.c
+index ba645e1f..9b4976de 100644
 --- a/libc/calls/fstatat-nt.c
 +++ b/libc/calls/fstatat-nt.c
-@@ -62,6 +62,8 @@
+@@ -62,6 +62,8 @@ textwindows int sys_fstatat_nt(int dirfd, const char *path, struct stat *st,
        return sys_fstat_nt_char(kFdDevNull, st);
      } else if (!strcmp(path + 5, "random") || !strcmp(path + 5, "urandom")) {
        return sys_fstat_nt_char(kFdDevRandom, st);
@@ -41,14 +60,14 @@
      } else if (!strcmp(path + 5, "stdin")) {
        return sys_fstat_nt(STDIN_FILENO, st);
      } else if (!strcmp(path + 5, "stdout")) {
+diff --git a/libc/calls/getprogramexecutablename.greg.c b/libc/calls/getprogramexecutablename.greg.c
+index 88b631e8..b98b26fd 100644
 --- a/libc/calls/getprogramexecutablename.greg.c
 +++ b/libc/calls/getprogramexecutablename.greg.c
-@@ -145,6 +145,40 @@
-   if (IsMetal()) {
-     __program_executable_name = APE_COM_NAME;
+@@ -147,6 +147,40 @@ static inline void InitProgramExecutableNameImpl(void) {
      return;
-+  }
-+
+   }
+ 
 +  if (IsXnu()) {
 +    /* mac: 无 GetModuleFileName//proc。KERN_PROCARGS2 sysctl 的 argv 区
 +     * 首串为 exec 绝对路径(不依赖 argv[0]/$_ 推断)。
@@ -81,13 +100,16 @@
 +        }
 +      }
 +    }
-   }
- 
++  }
++
    // see if the loader passed us a path.
-
+   if (__program_executable_name) {
+     if (issetugid()) {
+diff --git a/libc/calls/ioctl.c b/libc/calls/ioctl.c
+index c90c0a82..bb726ad7 100644
 --- a/libc/calls/ioctl.c
 +++ b/libc/calls/ioctl.c
-@@ -114,7 +114,7 @@
+@@ -114,7 +114,7 @@ static int ioctl_fionread(int fd, uint32_t *arg) {
        return 0;
      } else if (__get_pib()->fds.p[fd].kind == kFdDevNull) {
        return enotty();
@@ -96,9 +118,11 @@
        return einval();
      } else if (GetFileType(handle) == kNtFileTypePipe) {
        uint32_t avail;
+diff --git a/libc/calls/lseek-nt.c b/libc/calls/lseek-nt.c
+index afd8b0be..87fbeaa3 100644
 --- a/libc/calls/lseek-nt.c
 +++ b/libc/calls/lseek-nt.c
-@@ -65,7 +65,7 @@
+@@ -65,7 +65,7 @@ textwindows static int64_t Seek(struct Fd *f, int64_t offset, int whence) {
  }
  
  textwindows int64_t sys_lseek_nt(int fd, int64_t offset, int whence) {
@@ -107,9 +131,11 @@
      return offset;
    } else if (__isfdkind(fd, kFdFile)) {
      struct Fd *f = __get_pib()->fds.p + fd;
+diff --git a/libc/calls/open-nt.c b/libc/calls/open-nt.c
+index 5c852279..eba95798 100644
 --- a/libc/calls/open-nt.c
 +++ b/libc/calls/open-nt.c
-@@ -255,6 +255,8 @@
+@@ -255,6 +255,8 @@ textwindows static int sys_open_nt_dispatch(int dirfd, const char *file,
        return sys_open_nt_special(fd, flags, mode, kFdDevNull, u"NUL");
      if (!strcmp(file + 5, "urandom") || !strcmp(file + 5, "random"))
        return sys_open_nt_no_handle(fd, flags, mode, kFdDevRandom);
@@ -118,9 +144,25 @@
      if (!strcmp(file + 5, "stdin"))
        return sys_open_nt_dup(fd, flags, mode, STDIN_FILENO);
      if (!strcmp(file + 5, "stdout"))
+diff --git a/libc/calls/poll-nt.c b/libc/calls/poll-nt.c
+index cc5e401e..7c97a742 100644
+--- a/libc/calls/poll-nt.c
++++ b/libc/calls/poll-nt.c
+@@ -124,7 +124,8 @@ textwindows static int sys_poll_nt_actual(struct pollfd *fds, uint64_t nfds,
+         fileindices[pn] = i;
+         filehands[pn] = __get_pib()->fds.p[fds[i].fd].handle;
+         ++pn;
+-      } else if (kind == kFdDevNull || kind == kFdDevRandom || kind == kFdZip) {
++      } else if (kind == kFdDevNull || kind == kFdDevRandom ||
++                 kind == kFdDevZero || kind == kFdZip) {
+         // we can't wait on these kinds via win32
+         if (fds[i].events & (POLLRDNORM_ | POLLWRNORM_)) {
+           // the linux kernel does this irrespective of oflags
+diff --git a/libc/calls/pread.c b/libc/calls/pread.c
+index 723344dc..6a91763e 100644
 --- a/libc/calls/pread.c
 +++ b/libc/calls/pread.c
-@@ -76,7 +76,7 @@
+@@ -76,7 +76,7 @@ ssize_t pread(int fd, void *buf, size_t size, int64_t offset) {
    } else if (__isfdkind(fd, kFdSocket)) {
      rc = espipe();
    } else if (__isfdkind(fd, kFdFile) || __isfdkind(fd, kFdDevNull) ||
@@ -129,19 +171,37 @@
      rc = sys_read_nt(fd, (struct iovec[]){{buf, size}}, 1, offset);
    } else {
      rc = ebadf();
+diff --git a/libc/calls/printfds.c b/libc/calls/printfds.c
+index 4786357e..8ca4c154 100644
 --- a/libc/calls/printfds.c
 +++ b/libc/calls/printfds.c
-@@ -41,6 +41,7 @@
-     case kFdEpoll:
+@@ -42,6 +42,8 @@ static const char *__fdkind2str(int x) {
        return "kFdEpoll";
      case kFdDevRandom:
-+    case kFdDevZero:
        return "kFdRandom";
++    case kFdDevZero:
++      return "kFdZero";
      default:
        return "kFdWut";
+   }
+diff --git a/libc/calls/pwrite.c b/libc/calls/pwrite.c
+index 4d2cf75f..ff10508d 100644
+--- a/libc/calls/pwrite.c
++++ b/libc/calls/pwrite.c
+@@ -68,7 +68,7 @@ ssize_t pwrite(int fd, const void *buf, size_t size, int64_t offset) {
+   } else if (__isfdkind(fd, kFdSocket)) {
+     rc = espipe();
+   } else if (__isfdkind(fd, kFdFile) || __isfdkind(fd, kFdDevNull) ||
+-             __isfdkind(fd, kFdDevRandom)) {
++             __isfdkind(fd, kFdDevRandom) || __isfdkind(fd, kFdDevZero)) {
+     rc = sys_write_nt(fd, (struct iovec[]){{(void *)buf, size}}, 1, offset);
+   } else {
+     return ebadf();
+diff --git a/libc/calls/read-nt.c b/libc/calls/read-nt.c
+index 003c20f0..b1d25074 100644
 --- a/libc/calls/read-nt.c
 +++ b/libc/calls/read-nt.c
-@@ -1014,6 +1014,11 @@
+@@ -1014,6 +1014,11 @@ textwindows static ssize_t ReadBuffer(int fd, void *data, size_t size,
      return size;
    }
  
@@ -153,9 +213,11 @@
    if (f->kind == kFdConsole)
      return ReadFromConsole(f, data, size, waitmask);
  
+diff --git a/libc/calls/readv-nt.c b/libc/calls/readv-nt.c
+index 226a0ad6..467cb3fd 100644
 --- a/libc/calls/readv-nt.c
 +++ b/libc/calls/readv-nt.c
-@@ -32,6 +32,7 @@
+@@ -32,6 +32,7 @@ textwindows ssize_t sys_readv_nt(int fd, const struct iovec *iov, int iovlen) {
      case kFdConsole:
      case kFdDevNull:
      case kFdDevRandom:
@@ -163,9 +225,11 @@
        return sys_read_nt(fd, iov, iovlen, -1);
      case kFdSocket:
        return _weaken(sys_recv_nt)(fd, iov, iovlen, 0);
+diff --git a/libc/calls/readwrite-nt.c b/libc/calls/readwrite-nt.c
+index f69de498..95cc457a 100644
 --- a/libc/calls/readwrite-nt.c
 +++ b/libc/calls/readwrite-nt.c
-@@ -81,7 +81,7 @@
+@@ -81,7 +81,7 @@ sys_readwrite_nt(int fd, void *data, size_t size, ssize_t offset,
    bool appending = isdisk && ReadOrWriteFile == (void *)WriteFile &&
                     (f->flags & O_APPEND) && f->cursor;
    bool pwriting = offset != -1;
@@ -174,9 +238,11 @@
    if (pwriting && !seekable)
      return espipe();
  
+diff --git a/libc/calls/tcsetattr-nt.c b/libc/calls/tcsetattr-nt.c
+index a2b58977..8f83d90f 100644
 --- a/libc/calls/tcsetattr-nt.c
 +++ b/libc/calls/tcsetattr-nt.c
-@@ -58,8 +58,10 @@
+@@ -58,8 +58,10 @@ textwindows int tcsetattr_nt(int fd, int opt, const struct termios *tio) {
    if (tio->c_lflag & ICANON) {
      inmode |= kNtEnableLineInput | kNtEnableQuickEditMode;
    } else {
@@ -189,19 +255,25 @@
      __ttyconf.magic |= kTtyUncanon;
    }
    if (!(tio->c_iflag & ICRNL))
+diff --git a/libc/calls/write-nt.c b/libc/calls/write-nt.c
+index 6de3b516..3239958f 100644
 --- a/libc/calls/write-nt.c
 +++ b/libc/calls/write-nt.c
-@@ -64,6 +64,7 @@
-       isconsole = true;
-       break;
+@@ -66,6 +66,9 @@ textwindows static ssize_t sys_write_nt_impl(int fd, void *data, size_t size,
      case kFdDevRandom:
-+    case kFdDevZero:
        // not implemented, XNU returns eperm();
        return eperm();
++    case kFdDevZero:
++      // Linux /dev/zero accepts writes and discards their contents.
++      return size;
      default:
+       return ebadf();
+   }
+diff --git a/libc/calls/writev-nt.c b/libc/calls/writev-nt.c
+index 41e39669..d16a2a23 100644
 --- a/libc/calls/writev-nt.c
 +++ b/libc/calls/writev-nt.c
-@@ -31,6 +31,7 @@
+@@ -31,6 +31,7 @@ textwindows ssize_t sys_writev_nt(int fd, const struct iovec *iov, int iovlen) {
      case kFdConsole:
      case kFdDevNull:
      case kFdDevRandom:
@@ -209,9 +281,11 @@
        return sys_write_nt(fd, iov, iovlen, -1);
      case kFdSocket:
        return _weaken(sys_send_nt)(fd, iov, iovlen, 0);
+diff --git a/libc/intrin/fds.h b/libc/intrin/fds.h
+index bf2826c1..bca0f002 100644
 --- a/libc/intrin/fds.h
 +++ b/libc/intrin/fds.h
-@@ -15,6 +15,7 @@
+@@ -15,6 +15,7 @@ COSMOPOLITAN_C_START_
  #define kFdReserved  8
  #define kFdDevNull   9
  #define kFdDevRandom 10
@@ -219,9 +293,11 @@
  
  struct CursorShared {
    pthread_mutex_t lock;
+diff --git a/tool/build/apelink.c b/tool/build/apelink.c
+index b0ec719f..f7f9acd6 100644
 --- a/tool/build/apelink.c
 +++ b/tool/build/apelink.c
-@@ -1526,7 +1526,8 @@
+@@ -1526,7 +1526,8 @@ static Elf64_Off ThirdPass(Elf64_Off offset, struct Input *in) {
    // determine microprocessor page size
    unsigned long pagesz;
    if (in->elf->e_machine == EM_AARCH64) {

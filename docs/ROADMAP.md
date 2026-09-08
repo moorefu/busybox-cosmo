@@ -1,0 +1,21 @@
+# 后续工程路线
+
+本轮收敛的是补丁结构、文档入口和测试基础，不宣称跨平台能力全部完成。
+
+伴生工具与终端工作的执行顺序、运行时协议和验收条件见
+[COMPANION-TOOLS.md](COMPANION-TOOLS.md)。近期顺序固定为 `zip+xz`、`curl+CA`、
+`zstd`、按需 codec；`bbtty` 与前三项并行完善。分阶段执行与验收标准见
+[COMPANION-DELIVERY-PLAN.md](COMPANION-DELIVERY-PLAN.md)（M0–M5）。
+
+| 优先级 | 工作 | 完成标准 |
+|---|---|---|
+| P0 | termios 运行时索引与真实 PTY | mac/Windows/Linux 读写 intr/erase 双向对照、异常退出恢复终端；探针升级门禁 |
+| P1 | 可信下载 | 证书校验通过/过期/错误主机名/不可信 CA 的本地 TLS 测试；后端不可用时明确失败 |
+| P1 | 网络服务 | httpd/ftpd/inetd 等本地回环测试，明确 Windows fork/socket 的可用边界和超时 |
+| P1 | 发布矩阵 | min 与完整包都在六个 runner 跑契约；匹配产物哈希，按具体能力维护 SKIP 基线 |
+| P1 | raw TUI | 在 termios 修复后增加屏幕尺寸、键盘、粘贴、取消及终端恢复契约；行式 UI 继续作为默认降级 |
+| P2 | ash 扩展契约 | 交互 job control、信号中断、hush 对照、重定位安装、loader 冷缓存并发启动 |
+| P2 | 工具链升级 | 消除私有 ABI 隐式依赖；逐补丁上游化，演练 BusyBox/Cosmopolitan 升级并重新生成结果清单 |
+| P2 | 可复现发布 | 固定 ZIP 时间与文件顺序，两份独立工作目录构建及打包哈希对照 |
+
+实施原则：先写能暴露错误的行为测试，再修改对应层；平台“不支持”应成为可查询结果，而不是静默 fallback。TUI 以可靠行式/非交互基线为前提，raw 模式与完整 Unicode 排版单独验收。
