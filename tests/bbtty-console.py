@@ -24,6 +24,8 @@ def worker(binary):
     for name in ("SetConsoleCP", "SetConsoleOutputCP"):
         getattr(kernel, name).argtypes = [wintypes.UINT]
         getattr(kernel, name).restype = wintypes.BOOL
+    kernel.IsValidCodePage.argtypes = [wintypes.UINT]
+    kernel.IsValidCodePage.restype = wintypes.BOOL
 
     infd = os.open("CONIN$", os.O_RDWR | os.O_BINARY)
     outfd = os.open("CONOUT$", os.O_RDWR | os.O_BINARY)
@@ -93,7 +95,10 @@ def worker(binary):
         assert state() == before, "无输出令牌修改了当前输出模式"
         print("PASS 无输出令牌恢复不修改输出 Console", flush=True)
 
-        bad_tokens = ["junk", token + "00", token.replace(":windows:", ":unix:")]
+        # 最后一项是十进制代码页，追加数字仍是合法格式；用非数字尾缀
+        # 验证语法拒绝，代码页应用失败则在下面单独验证回滚。
+        bad_tokens = ["junk", token + "x", token + ":0",
+                      token.replace(":windows:", ":unix:")]
         fields = token.split(":")
         fields[4] = "2"
         bad_tokens.append(":".join(fields))
@@ -106,6 +111,19 @@ def worker(binary):
             assert result.returncode == 2 << 8, (bad, result)
             unchanged(before, "拒绝令牌后 Console 被修改")
         print("PASS 损坏令牌拒绝且无副作用", flush=True)
+
+        invalid_cp = 0xffffffff
+        assert not kernel.IsValidCodePage(invalid_cp), "无效代码页测试前提不成立"
+        fields = token.split(":")
+        # 先改变输入模式和输入代码页，最后让输出代码页设置失败，
+        # 从而验证部分应用后的回滚，而不只是一次没有状态变化的失败。
+        fields[2] = "%08x" % (before[0] & ~7)
+        fields[5] = "65001"
+        fields[6] = str(invalid_cp)
+        result = run("restore", ":".join(fields))
+        assert result.returncode == 1 << 8, result
+        unchanged(before, "代码页应用失败后未完整回滚")
+        print("PASS 无效代码页应用失败且完整回滚", flush=True)
     finally:
         kernel.SetConsoleMode(hin, initial[0])
         kernel.SetConsoleMode(hout, initial[1])
