@@ -1,8 +1,29 @@
 # 伴生工具交付方案（busybox-archive / busybox-net / bbtty）
 
-状态：方案稿。落笔前先对齐范围、供应线、发布形态与验收标准；实现按 M0–M5 里程碑推进，
+状态：实施中。源码供应线与分层包已落地，跨平台验收尚未全部完成；实现按 M0–M5 里程碑推进，
 每步有明确“完成标准”与可复核证据。本文件是 [COMPANION-TOOLS.md](COMPANION-TOOLS.md)
 的工程执行方案，不替代其运行时协议。
+
+## 当前证据与下一步（2026-09-08）
+
+[CI #61](https://github.com/moorefu/busybox-cosmo/actions/runs/34152533766)
+对应 `cb18dc7`：构建、Linux 双架构、macOS 双架构通过；Windows 两组均在
+bbtty Console 状态保持断言失败。以下是验收边界，不以“已接线”替代通过证据：
+
+1. **先闭环 M0**：Cosmo 的 `WinInit` 在 main 前修改代码页和 ConsoleMode。
+   新增仅由 bbtty 定义的保留开关，测试保持 CP437、size/save 无副作用、raw 后再次
+   save、restore 逐位恢复；必须重新构建工具链，不能只重编 bbtty。Windows 实机结果待新 CI。
+2. **补齐 M1–M3 的 Windows 契约**：当前伴生工具下载、格式往返和交付 curl 的 HTTPS KAT
+   仅在 Unix 矩阵执行。下一批先让 Python 驱动在 Windows 直接启动 `.com`，再拆分
+   ZIP 的通用数据契约与 POSIX 权限/符号链接契约，接入两组 Windows；不能整组跳过。
+3. **验收 M5 的实际包**：分别解压 archive/net 包，在隔离 PATH 下通过包内兼容层调用工具，
+   证明没有偷用宿主编码器或 curl；记录工具来源、CA 路径及包哈希。
+4. **发布前补供应链证据**：区分“打包逐位复现”与“从源码双目录重建逐位复现”；检查
+   TLS 依赖安全更新、许可证及 SBOM，并把对应源码/补丁获取方式纳入发布物。
+5. **之后再做 ConPTY**：独立会话、超时清理、输入字节流与异常恢复；不把传统 Console
+   通过称为 ConPTY 通过。`lz4/brotli` 仍不扩范围，Developer ID 公证需正式签名身份。
+
+下文的已实现描述是实施记录；验收状态以本节和对应 CI 证据为准。
 
 ## 1. 目标与边界
 

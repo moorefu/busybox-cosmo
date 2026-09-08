@@ -11,6 +11,8 @@
 | LOADER-DISCOVERY | launcher、ash、libc 对 loader 名称/路径的查找 | macOS/Linux 显式 loader | 载荷路径被识别为 loader，嵌套 exec 失败 | 私有 loader、系统 loader、缺 loader 三种路径 |
 | FORK-ERROR | tar 压缩子进程、BusyBox `fork/vfork` | vfork/fork 子进程 | exec 或编码中途失败被父进程误判成功 | 假编码器、无 PATH、非零退出、空归档 |
 | WINDOWS-ABI | Toolhelp、`tprecode16to8` 真实头文件原型 | Cosmopolitan Windows | ps 名称乱码或 ABI 调用破坏栈 | Unicode 进程名及系统 `ps` 交叉输出 |
+| CONSOLE-STARTUP | `libc/runtime/winmain.greg.c` 默认在 main 前修改模式/代码页；定制弱符号 `__cosmo_preserve_console` 按存在性禁用该初始化 | 仅 bbtty 定义符号，其他程序不变 | save 保存错误基线，后续调用破坏 raw 状态 | `bbtty-console.py`：CP437 基线、size/save 无副作用、raw 后 save、完整恢复 |
+| WINDOWS-EXIT | `libc/intrin/exit.c` 将退出码左移 8 位 | 原生 Python/PowerShell 启动 APE；Cosmo 父进程使用 wait 语义 | 把原生返回的 256/512 误当未知错误 | Console 测试校验 1/2 对应原生 256/512，不接受任意非零 |
 | PAGE-LAYOUT | APE loader 与 payload 的 PT_LOAD、`e_flags`、最终偏移 | 4K/16K/64K 页 Linux | loader 可解压但内核拒绝加载 | `check-ape-64k.sh` 坏样本 + QEMU 64K |
 | TOOLCHAIN-SET | 头、库、crt、apelink、loader 的同源摘要 | 自定义工具链构建 | 旧工具链/缓存产生不可复现产物 | manifest、SHA256、干净目录重建 |
 | APPLET-CAPABILITY | BusyBox applet 实际编码/解码能力与配置 | tar/gzip/bzip2/xz/lzma | 仅解码 applet 被误当编码器 | 外部工具缺失、独立工具交叉校验 |

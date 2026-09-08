@@ -5,7 +5,7 @@
 # 原则 (与 2026-09-03 已验证工具链逐字节一致):
 #   [基座] 官方 cosmocc (默认 v4.0.2 zip; 编译驱动/GCC14, 驱动不自行构建)
 #   [源码] 官方 cosmopolitan @3293fad    (jart/cosmopolitan master)
-#   [补丁] patches/cosmo/series 显式排序（当前 5 项）
+#   [补丁] patches/cosmo/series 显式排序
 #   [构建] master 树内 make → o/<arch>/cosmopolitan.a + crt/ape 部件
 #          (用基座 bin/make 4.4.1 自举; make 版本 3.81 会被拒)
 #   [组装] 基座 + 替换 libcosmo.a/crt/ape.* + 重装 include/ (master 头)

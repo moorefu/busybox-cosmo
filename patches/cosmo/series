@@ -4,3 +4,4 @@ cosmo-apelink-apeflags-extra.patch
 cosmo-mkntcmdline-roundtrip-extra.patch
 cosmo-pen-mac-loader-extra.patch
 cosmo-sethostname-extra.patch
+cosmo-console-preserve-extra.patch

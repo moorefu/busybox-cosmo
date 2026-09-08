@@ -9,6 +9,7 @@
 | cosmo-mkntcmdline-roundtrip-extra | Windows 参数中的反斜线与双引号往返 |
 | cosmo-pen-mac-loader-extra | mac loader 路径下识别真正载荷 |
 | cosmo-sethostname-extra | 平台 hostname 写入适配；仍受权限控制 |
+| cosmo-console-preserve-extra | bbtty 显式保留启动前 Console 模式/代码页；其他程序行为不变 |
 
 主补丁只有约 233 行，保留其现有边界；不为追求文件数量机械拆分。驱动包装脚本的 64K 参数仍由工具链组装阶段处理。
 

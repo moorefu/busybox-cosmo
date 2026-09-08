@@ -21,6 +21,9 @@ def worker(binary):
     kernel.SetConsoleMode.restype = wintypes.BOOL
     for name in ("GetConsoleCP", "GetConsoleOutputCP"):
         getattr(kernel, name).restype = wintypes.UINT
+    for name in ("SetConsoleCP", "SetConsoleOutputCP"):
+        getattr(kernel, name).argtypes = [wintypes.UINT]
+        getattr(kernel, name).restype = wintypes.BOOL
 
     infd = os.open("CONIN$", os.O_RDWR | os.O_BINARY)
     outfd = os.open("CONOUT$", os.O_RDWR | os.O_BINARY)
@@ -36,6 +39,11 @@ def worker(binary):
         return (mode(hin), mode(hout), kernel.GetConsoleCP(),
                 kernel.GetConsoleOutputCP())
 
+    def unchanged(expected, operation):
+        actual = state()
+        assert actual == expected, (operation, "输入模式/输出模式/输入CP/输出CP",
+                                    expected, actual)
+
     def run(*args, console_output=True):
         return subprocess.run(
             [binary, *args], stdin=infd, stdout=subprocess.PIPE,
@@ -47,15 +55,19 @@ def worker(binary):
     try:
         # 显式建立可观测基线，避免 runner 初始模式碰巧等于 raw。
         assert kernel.SetConsoleMode(hin, initial[0] | 7)
+        # 非 UTF-8 基线专门捕获 main 前的隐式代码页初始化。
+        assert kernel.SetConsoleCP(437)
+        assert kernel.SetConsoleOutputCP(437)
         before = state()
         dimensions = run("size")
         assert dimensions.returncode == 0, dimensions
         rows, columns = map(int, dimensions.stdout.split())
         assert rows > 0 and columns > 0, dimensions.stdout
+        unchanged(before, "size 改动了 Console 状态")
         print("PASS Console 尺寸查询", flush=True)
         saved = run("save")
         assert saved.returncode == 0, saved
-        assert state() == before, "save 改动了 Console 状态"
+        unchanged(before, "save 改动了 Console 状态")
         token = saved.stdout.decode().strip()
         result = run("raw")
         assert result.returncode == 0, result
@@ -65,9 +77,11 @@ def worker(binary):
         assert changed[0] & 0x200, "未启用 VT 输入"
         assert changed[1] & 5 == 5, "未启用 VT 输出"
         assert changed[2:] == before[2:], "raw 意外改变了代码页"
+        assert run("save").returncode == 0
+        unchanged(changed, "raw 后再次 save 破坏了状态")
         restored = run("restore", token)
         assert restored.returncode == 0, restored
-        assert state() == before, "restore 未逐位恢复模式和代码页"
+        unchanged(before, "restore 未逐位恢复模式和代码页")
         print("PASS Console save/raw/restore 逐位往返", flush=True)
 
         # 保存时没有输出 Console；后来恢复时不能把输出模式清零。
@@ -87,12 +101,16 @@ def worker(binary):
         fields[5] = "-1"
         bad_tokens.append(":".join(fields))
         for bad in bad_tokens:
-            assert run("restore", bad).returncode == 2, bad
-            assert state() == before, "拒绝令牌后 Console 被修改"
+            result = run("restore", bad)
+            # libc/intrin/exit.c 将退出码转换为 POSIX wait status。
+            assert result.returncode == 2 << 8, (bad, result)
+            unchanged(before, "拒绝令牌后 Console 被修改")
         print("PASS 损坏令牌拒绝且无副作用", flush=True)
     finally:
         kernel.SetConsoleMode(hin, initial[0])
         kernel.SetConsoleMode(hout, initial[1])
+        kernel.SetConsoleCP(initial[2])
+        kernel.SetConsoleOutputCP(initial[3])
         os.close(infd)
         os.close(outfd)
 
@@ -113,10 +131,9 @@ def main():
         result = subprocess.run([binary, command], stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 timeout=15)
-        # 语义: 非终端/非 Console 必须"明确失败"。Unix 后端 rc=1; Windows 上
-        # cosmocc APE 直跑的退出码呈现为 1<<8=256 (CI windows-2022 实测), 两者
-        # 都代表同一错误路径, 一并接受并锁住 (其余取值视为回归)。
-        assert result.returncode in (1, 256), (command, result)
+        # 本驱动由原生 Python 直跑 APE；exit.c 将 rc=1 编为 256。
+        # 不混用 Cosmo wait 解码后的退出码，更不能接受任意非零。
+        assert result.returncode == 1 << 8, (command, result)
     # save/raw 应明确指出非 Console; size 只承诺"取不到终端尺寸"的失败, 文案
     # 是本地化的 (无固定 ASCII), 只校验退出码, 不比对文案。
     for command in ("save", "raw"):

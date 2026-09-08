@@ -28,6 +28,10 @@
 #define TOKEN_PREFIX "bbtty-v1"
 #define UNIX_DEV_HEX 16 /* st_rdev 的定长十六进制字段 */
 
+/* 配合 cosmo-console-preserve-extra.patch：在 main 前也不得改动终端。
+ * 仅 bbtty 定义此符号；BusyBox/curl 等仍使用 Cosmo 默认初始化。 */
+const char __cosmo_preserve_console = 1;
+
 static void usage(FILE *f) {
   fputs("用法: bbtty size|save|raw|restore TOKEN|capabilities\n", f);
 }
