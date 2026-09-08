@@ -116,15 +116,16 @@ curl TLS 后端选型（M2 待办决策点，开工前评审）：已核实 cosm
 （`toolchain/cosmo/**/lib` 无 libssl/libcrypto/libz，include 无对应头）。候选：
 wolfSSL（autotools 交叉模式，类似 xz 的 `--host` 方案已在本工程验证可行）或 mbedTLS
 （自带 Makefile/无 autotools，需 `--with-mbedtls` 接 curl）。curl 以 `--without-zlib`
-构建即可满足 HTTPS 身份/内容获取（HTTP 压缩解码非 M2 承诺）。KAT 已按“同一参数集可替换
-被测 curl”设计，curl.com 落地后直接以 `python3 tests/https-kat.py dist/tools/curl.com`
-复跑即闭环。
+构建即可满足 HTTPS 身份/内容获取（HTTP 压缩解码非 M2 承诺）。KAT 以
+`python3 tests/https-kat.py dist/tools/curl.com` 驱动真实 `bbp_https_get`（不复制一份 curl
+参数集），curl.com 落地即闭环；用例在 `CURL_HOME` 下放置含 `insecure` 的 `.curlrc`，
+包装器一旦缺少首参数 `--disable` 即失败。
 
 M1-xz 交叉构建已踩并记录的坑（zip/zstd/curl 复用）：(a) macOS 宿主跑不了 cosmo 的 Linux ELF
 探针，configure 必须用 `--host=` 交叉模式关闭运行期探测；(b) cosmo 库内含 `pledge` 符号但头文件
 无声明，xz 需 `--enable-sandbox=no`；(c) 静态库必须用 `x86_64|aarch64-linux-cosmo-ar/ranlib`，
 Xcode `ar` 会把 ELF 成员建成空壳库。
-| M2 | `curl+CA`（P1） | 已闭环：CA 固定流程（`fetch-cacert.sh`，2026-08-13 + 官方 sidecar 交叉校验）；curl.com 供应线 `fetch-curl.sh`+`build-curl.sh`（curl 8.13.0 + **mbedTLS 3.6.2**，`--with-mbedtls` 静态链，`--without-zlib`）；本地 TLS KAT 六组对 **curl.com** 全绿（含 `--proto-redir '=https'` 不降级）；实网 `https://curl.se` + 锁定 CA 端到端取回正确 sha；CI：build job 复现 `make curl`，unix-matrix 用交付 curl.com 跑 KAT |
+| M2 | `curl+CA`（P1） | 已闭环：CA 固定流程（`fetch-cacert.sh`，2026-08-13 + 官方 sidecar 交叉校验）；curl.com 供应线 `fetch-curl.sh`+`build-curl.sh`（curl 8.13.0 + **mbedTLS 3.6.2**，`--with-mbedtls` 静态链，`--without-zlib`）；本地 TLS KAT 直接驱动真实 `bbp_https_get`，六组对 **curl.com** 全绿（含 `--proto-redir '=https'` 不降级，及 `.curlrc` 中 `insecure` 被忽略）；实网 `https://curl.se` + 锁定 CA 端到端取回正确 sha；CI：build job 复现 `make curl`，unix-matrix 用交付 curl.com 跑 KAT |
 | M3 | `zstd`（P1） | 供应线已落地（`scripts/fetch-zstd.sh`+`build-zstd.sh`：v1.5.7 → `dist/tools/zstd.com`，SBOM/license/往返冒烟）；契约并入 `tests/companion-tools.py --zstd`；CI 复现与 unix-matrix 契约已接线。顺序说明：因 M2 的 curl.com 依赖 TLS 后端选型（cosmo 无 openssl/zlib），zstd 先行落地，curl 保留为下一块 |
 | M4 | `lz4`/`brotli` 预留 | 只保留发现接口与许可核对结论；不建构建配方、不进默认包 |
 | M5 | 分层打包与发布矩阵 | `busybox-archive`（`package-archive.sh`：busybox+xz/zip/zstd）与 `busybox-net`（`package-net.sh`：busybox+curl.com+cacert.pem）均已落地并**逐位可复现**（SOURCE_DATE_EPOCH 固定，两次构建哈希一致实测）；net 包包内自检含实网可信拉取；`busybox-codec-extra`（需 lz4/brotli）待对应工具落地；六 runner 契约与产物哈希对照沿用 M1–M3 接线 |

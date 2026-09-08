@@ -301,7 +301,8 @@ bbp_https_get() {
 	case "$1" in https://*) ;; *) return "$BBP_E_USAGE" ;; esac
 	bbp_https_curl=$(bbp_curl) || return "$BBP_E_UNAVAILABLE"
 	bbp_https_ca=$(bbp_ca_bundle) || return "$BBP_E_UNAVAILABLE"
-	"$bbp_https_curl" --fail --location --silent --show-error \
+	# --disable 必须是首参数，禁止 ~/.curlrc 中的 insecure 等配置削弱策略。
+	"$bbp_https_curl" --disable --fail --location --silent --show-error \
 		--proto '=https' --proto-redir '=https' --tlsv1.2 \
 		--cacert "$bbp_https_ca" --output "$2" "$1"
 }

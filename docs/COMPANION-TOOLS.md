@@ -9,7 +9,7 @@
 | 阶段 | 组件 | 承诺 | 状态 |
 |---|---|---|---|
 | P0 | `zip`、`xz` | 创建与解压往返一致 | 供应线已落地：`xz` 5.4.7、`zip`(Info-ZIP 3.0 + Debian 3.0-16 安全补丁)，产物 `dist/tools/xz.com`/`zip.com`；深度契约 `tests/companion-tools.py` 覆盖 deflate/目录/权限/时间戳/Zip Slip(解码端剥离 `../` 不逃逸)/符号链接/错误路径，本机全绿；CI 复现与契约步骤已接入，待实跑 |
-| P1 | `curl`、`cacert.pem` | HTTPS 强制证书校验 | 已闭环：CA 固定流程（`fetch-cacert.sh`，2026-08-13 快照）；curl.com 供应线落地（`fetch-curl.sh`+`build-curl.sh`，curl 8.13.0 + **mbedTLS 3.6.2** TLS 后端 → `dist/tools/curl.com`）；本地 TLS KAT `tests/https-kat.py` 六组全绿 + 实网拉取验证；`bbp_https_get` 带 `--proto-redir '=https'`；CI 用交付 curl.com 跑 KAT |
+| P1 | `curl`、`cacert.pem` | HTTPS 强制证书校验 | 已闭环：CA 固定流程（`fetch-cacert.sh`，2026-08-13 快照）；curl.com 供应线落地（`fetch-curl.sh`+`build-curl.sh`，curl 8.13.0 + **mbedTLS 3.6.2** TLS 后端 → `dist/tools/curl.com`）；本地 TLS KAT `tests/https-kat.py` 直接驱动真实 `bbp_https_get`，六组 + `.curlrc` 含 `insecure` 的隔离断言全绿（去掉首参数 `--disable` 即红）+ 实网拉取验证；`bbp_https_get` 带 `--proto-redir '=https'`；CI 用交付 curl.com 跑 KAT |
 | P1 | `zstd` | 创建与解压往返一致，推荐新归档使用 | 供应线已落地（`scripts/fetch-zstd.sh`+`build-zstd.sh`，v1.5.7 → `dist/tools/zstd.com` + SBOM/license），往返/损坏输入契约入 `tests/companion-tools.py`（`--zstd`），能力上报 `archive.zstd.roundtrip=bundled`；本机全绿 |
 | 按需 | `lz4`、`brotli` | 仅真实项目需要时发布 | 只预留发现接口，不进入默认包 |
 | 自有 | `bbtty` | `size/save/raw/restore` | Unix PTY 与 Windows Console 驱动已接入 CI；Windows 实机结果及 ConPTY 验收待完成 |
@@ -30,13 +30,26 @@ make sign-macos            # 或 scripts/sign-macos.sh [--identity ID] [文件..
 - ad-hoc（`-`）免费、无需开发者账号，`codesign --force --sign - --timestamp=none`；
 - CI：unix-matrix 的 macOS runner 会在跑契约前对 `release/` 与 `companion-tools/` 下的
   `*.com/*.ape/assimilate` 做 ad-hoc 签名；
-- 对外分发若要免「右键打开」警告，需证书持有者做 Developer ID 签名并公证：
+- 对外分发若要免「右键打开」警告，需证书持有者做 Developer ID 签名并公证。
+  以下仓库脚本仍为实验辅助，尚未完成端到端公证验收，本版不承诺已公证：
   `scripts/notarize-macos.sh --identity "Developer ID Application: …"`（内部完成
   签名→聚合打包→`xcrun notarytool submit --wait`→`stapler staple`→校验），
   凭据走环境变量 `APPLE_ID`/`APPLE_TEAM_ID`/`APPLE_APP_PASSWORD`，仅在你本机执行；
   可先 `scripts/notarize-macos.sh --check` 做前置检查（身份/工具）。CI 不做公证；
-- 分层包 zip 保持未签名以维持逐位可复现，解压后先跑 `make sign-macos`（或对解压目录
-  执行 `scripts/sign-macos.sh`）再运行。
+- `make sign-macos` 仅适用于源码仓库。只有发布 ZIP 时，在解压目录执行下面的命令，
+  不依赖未随包提供的 Makefile 或脚本；ad-hoc 签名不等于 Developer ID 公证，
+  也不会自动解除下载文件的 Gatekeeper 限制：
+
+```sh
+for f in ./busybox.com ./busybox-*.ape ./assimilate ./tools/*.com; do
+    [ -f "$f" ] || continue
+    chmod +x "$f" || exit
+    codesign --force --sign - --timestamp=none "$f" || exit
+done
+chmod +x ./busybox
+```
+
+签名会修改可执行文件，发布哈希应在签名前校验。仅对已验证来源的文件操作。
 
 ## 运行时规则
 
@@ -54,7 +67,9 @@ bbp_https_get https://example.com/data.json data.json
 ```
 
 可信下载只接受 `https://`，强制 `--proto '=https'`、TLS 1.2 及以上、CA 校验，且
-没有 `-k` 逃生口。CA 文件通过 `BBP_CA_BUNDLE` 或 `tools/cacert.pem` 提供。
+没有 `-k` 逃生口；并以 `--disable` 作为首参数忽略用户 `~/.curlrc`，其中的
+`insecure`、`proxy` 等配置不得削弱上述策略。CA 文件通过 `BBP_CA_BUNDLE` 或
+`tools/cacert.pem` 提供。
 `configured` 仅表示 curl/CA 本地配置完整；正式发布还必须通过联网 KAT，包括有效
 证书成功、无效证书失败和重定向不降级到 HTTP。
 

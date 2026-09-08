@@ -312,6 +312,8 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/companion-tools.log"
       - name: 运行本地 HTTPS KAT (交付 curl.com, 本回环)
         shell: bash
+        env:
+          BBP_TEST_BUSYBOX: ${{ github.workspace }}/release/busybox-fat.ape
         run: |
           set -o pipefail
           python3 "$GITHUB_WORKSPACE/tests/https-kat.py" \

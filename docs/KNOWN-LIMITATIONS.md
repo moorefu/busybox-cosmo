@@ -6,7 +6,7 @@
 |---|---|
 | ash 基础脚本 | 优先包内 ash、明确参数引号和退出码。新增契约覆盖引用、管道、exec、argv、wait 等，但不是 POSIX 完整认证 |
 | stty / raw TUI | BusyBox `stty` applet 的 termios 编译期索引仍有跨平台布局风险，不作为 TUI 原始模式路径；TUI 原始模式改由专用 `bbtty`（`size/save/raw/restore`，Unix 令牌绑定终端、真实 PTY 契约 + trap 恢复已验）。Windows 传统 Console 驱动已测，**ConPTY 会话创建仍待实机验证** |
-| HTTPS wget | 内置 TLS 不等于证书可信校验，wget 路径不作为可信下载后端；可信下载由伴生 `curl.com` + 固定 `cacert.pem` 提供（`bbp_https_get` 强制 `https://`+证书校验+`--proto-redir`，本地 TLS KAT 与实网拉取已验） |
+| HTTPS wget | 内置 TLS 不等于证书可信校验，wget 路径不作为可信下载后端；可信下载由伴生 `curl.com` + 固定 `cacert.pem` 提供（`bbp_https_get` 以首参数 `--disable` 屏蔽用户 `.curlrc` 隐式配置，强制 `https://`+证书校验+`--proto-redir`，本地 TLS KAT 直接驱动该包装器并覆盖 `.curlrc` 含 `insecure` 的回归，与实网拉取均已验） |
 | xz / lzma / zip / zstd 创建 | 内置 xz、lzma、unzip 只承诺解码。编码器现以**可选伴生 APE** 提供：xz/zip/zstd 固定源码自建于 `dist/tools/*.com`（busybox-archive 分层包），兼容层 bundled 优先、宿主 PATH 兜底并做往返验证；不把第三方揉进 BusyBox 单体的边界不变 |
 | Unicode | 配置支持部分宽字符，但不是完整 Unicode 字形/宽度引擎；组合字符、emoji 和超过 U+9FFF 的清洗/宽度路径不能承诺一致。原始字节输出与终端排版是两回事 |
 | mac ps | 透传系统 `/bin/ps`，选项、输出及沙箱权限不同；脚本不要解析它作为跨平台进程协议 |
